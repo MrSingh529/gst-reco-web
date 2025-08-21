@@ -137,36 +137,36 @@ export function totals(rows: {inv_val:number; igst:number; cgst:number; sgst:num
 
 // ----- Builders for each output sheet (return AOA = array of arrays) -----
 
-export function buildZohoVsGSTR(z: GroupedRow[], g: GroupedRow[], eps: number) {
-  const rightMap = new Map(g.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]))
-  const rows = [[
+export function buildZohoVsGSTR(z: GroupedRow[], g: GroupedRow[], eps: number): (string | number)[][] {
+  const rightMap = new Map(g.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+  const rows: (string | number)[][] = [[
     'Invoice Number from Purchase Book',
     'Invoice Value from Purchase Book',
     'Invoice Value from GSTR-2B',
     'Difference'
-  ]]
+  ]];
   for (const L of z) {
-    const R = rightMap.get(`${L.GSTIN_clean}|${L.INV_clean}`)
-    const diff = clamp(L.inv_val - (R?.inv_val || 0), eps)
-    rows.push([L.INV_clean, L.inv_val, R?.inv_val || 0, diff])
+    const R = rightMap.get(`${L.GSTIN_clean}|${L.INV_clean}`);
+    const diff = clamp(L.inv_val - (R?.inv_val || 0), eps);
+    rows.push([L.INV_clean, L.inv_val, R?.inv_val || 0, diff]);
   }
-  return rows
+  return rows;
 }
 
-export function buildGSTRVsZoho(g: GroupedRow[], z: GroupedRow[], eps: number) {
-  const rightMap = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]))
-  const rows = [[
+export function buildGSTRVsZoho(g: GroupedRow[], z: GroupedRow[], eps: number): (string | number)[][] {
+  const rightMap = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+  const rows: (string | number)[][] = [[
     'Invoice Number from GSTR-2B',
     'Invoice Value from GSTR-2B',
     'Invoice Value from Purchase Book',
     'Difference'
-  ]]
+  ]];
   for (const L of g) {
-    const R = rightMap.get(`${L.GSTIN_clean}|${L.INV_clean}`)
-    const diff = clamp(L.inv_val - (R?.inv_val || 0), eps)
-    rows.push([L.INV_clean, L.inv_val, R?.inv_val || 0, diff])
+    const R = rightMap.get(`${L.GSTIN_clean}|${L.INV_clean}`);
+    const diff = clamp(L.inv_val - (R?.inv_val || 0), eps);
+    rows.push([L.INV_clean, L.inv_val, R?.inv_val || 0, diff]);
   }
-  return rows
+  return rows;
 }
 
 export function buildSumFunction(z: GroupedRow[], g: GroupedRow[]) {
