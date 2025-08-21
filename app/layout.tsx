@@ -32,7 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <span className="font-medium">RV Solutions</span>
               <div className="text-right text-slate-600">
                 <div>Embrace Automation</div>
-                <div>Project Initiated by Vandana Ma'am</div>
+                <div>Project Initiated by Vandana Ma&apos;m</div>
                 <div>Project Led by Harpinder Singh</div>
               </div>
             </div>
