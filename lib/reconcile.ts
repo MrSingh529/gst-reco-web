@@ -1,7 +1,5 @@
 import * as XLSX from 'xlsx'
 
-export type RawRow = Record<string, any>
-
 export const EPS_DEFAULT = 10 // ₹10 tolerance
 
 const COLS = {
@@ -16,6 +14,8 @@ const COLS = {
   taxable: 'Taxable Value',
 } as const
 
+export type RawRow = Record<string, unknown>
+
 export interface CleanRow {
   GSTIN_clean: string
   INV_clean: string
@@ -27,22 +27,26 @@ export interface CleanRow {
   taxable: number
 }
 
-function cleanGSTIN(s: any): string {
-  return String(s ?? '').trim().toUpperCase()
+function asString(v: unknown): string {
+  return String(v ?? '')
 }
-function cleanInv(s: any): string {
-  let v = String(s ?? '').toUpperCase().trim()
+function cleanGSTIN(s: unknown): string {
+  return asString(s).trim().toUpperCase()
+}
+function cleanInv(s: unknown): string {
+  let v = asString(s).toUpperCase().trim()
   v = v.replace(/[\s\-]/g, '')
   v = v.replace(/\\/g, '/')
   v = v.replace(/^0+([1-9])/, '$1')
   return v
 }
-function cleanTrade(s: any): string {
-  return String(s ?? '').toUpperCase().trim().replace(/\s+/g, ' ')
+function cleanTrade(s: unknown): string {
+  return asString(s).toUpperCase().trim().replace(/\s+/g, ' ')
 }
-function toNum(v: any): number {
+function toNum(v: unknown): number {
   if (v === null || v === undefined || v === '') return 0
-  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''))
+  if (typeof v === 'number') return isFinite(v) ? v : 0
+  const n = parseFloat(asString(v).replace(/,/g, ''))
   return isNaN(n) ? 0 : n
 }
 
@@ -59,18 +63,18 @@ export function normalize(rows: RawRow[]): { clean: CleanRow[]; tradeByGSTIN: Ma
   const tradeCounts = new Map<string, Map<string, number>>()
 
   for (const r of rows) {
-    const gstin = cleanGSTIN(r[COLS.gstin])
-    const inv   = cleanInv(r[COLS.inv])
-    const trade = cleanTrade(r[COLS.trade])
+    const gstin = cleanGSTIN((r as Record<string, unknown>)[COLS.gstin])
+    const inv   = cleanInv((r as Record<string, unknown>)[COLS.inv])
+    const trade = cleanTrade((r as Record<string, unknown>)[COLS.trade])
     const row: CleanRow = {
       GSTIN_clean: gstin,
       INV_clean: inv,
       TRADE_clean: trade,
-      inv_val: toNum(r[COLS.inv_val]),
-      igst: toNum(r[COLS.igst]),
-      cgst: toNum(r[COLS.cgst]),
-      sgst: toNum(r[COLS.sgst]),
-      taxable: toNum(r[COLS.taxable]),
+      inv_val: toNum((r as Record<string, unknown>)[COLS.inv_val]),
+      igst: toNum((r as Record<string, unknown>)[COLS.igst]),
+      cgst: toNum((r as Record<string, unknown>)[COLS.cgst]),
+      sgst: toNum((r as Record<string, unknown>)[COLS.sgst]),
+      taxable: toNum((r as Record<string, unknown>)[COLS.taxable]),
     }
     clean.push(row)
 
@@ -81,7 +85,6 @@ export function normalize(rows: RawRow[]): { clean: CleanRow[]; tradeByGSTIN: Ma
     }
   }
 
-  // pick most frequent trade per GSTIN
   const tradeByGSTIN = new Map<string,string>()
   for (const [gstin, m] of tradeCounts) {
     let best = '', cnt = -1
@@ -282,7 +285,7 @@ export function buildTradeWise(z: GroupedRow[], g: GroupedRow[], tradeByGSTIN: M
   return rows
 }
 
-export function buildWorkbook(aoaByName: Record<string, any[][]>) {
+export function buildWorkbook(aoaByName: Record<string, (string | number)[][]>) {
   const wb = XLSX.utils.book_new()
   for (const [name, aoa] of Object.entries(aoaByName)) {
     const ws = XLSX.utils.aoa_to_sheet(aoa)

@@ -34,8 +34,8 @@ export default function Page() {
       const { clean: g2bClean, tradeByGSTIN: t1 } = normalize(gRows)
       const { clean: zohoClean, tradeByGSTIN: t2 } = normalize(zRows)
 
-      const tradeByGSTIN = new Map<string,string>(t1)
-      for (const [k,v] of t2) if (v) tradeByGSTIN.set(k, v)
+      const tradeByGSTIN = new Map<string, string>(t1)
+      for (const [k, v] of t2) if (v) tradeByGSTIN.set(k, v)
 
       const g2bGrp = groupByGSTINInv(g2bClean)
       const zohoGrp = groupByGSTINInv(zohoClean)
@@ -52,9 +52,10 @@ export default function Page() {
       const wbOut = buildWorkbook(aoa)
       XLSX.writeFile(wbOut, 'reconciliation_output.xlsx')
       setLog('✅ Reconciliation complete. File downloaded: reconciliation_output.xlsx')
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
       console.error(err)
-      setLog('❌ Error: ' + (err?.message || String(err)))
+      setLog('❌ Error: ' + msg)
     } finally {
       setBusy(false)
     }
@@ -62,14 +63,14 @@ export default function Page() {
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
-    if (f) handleFile(f)
+    if (f) void handleFile(f)
     if (inputRef.current) inputRef.current.value = ''
   }
 
   function onDrop(e: React.DragEvent<HTMLLabelElement>) {
     e.preventDefault()
     const f = e.dataTransfer.files?.[0]
-    if (f) handleFile(f)
+    if (f) void handleFile(f)
   }
 
   return (
