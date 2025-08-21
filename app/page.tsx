@@ -35,7 +35,7 @@ export default function Page() {
       const { clean: zohoClean, tradeByGSTIN: t2 } = normalize(zRows)
 
       const tradeByGSTIN = new Map<string, string>(t1)
-      for (const [k, v] of t2) if (v) tradeByGSTIN.set(k, v)
+      for (const [k, v] of Array.from(t2.entries())) if (v) tradeByGSTIN.set(k, v)
 
       const g2bGrp = groupByGSTINInv(g2bClean)
       const zohoGrp = groupByGSTINInv(zohoClean)

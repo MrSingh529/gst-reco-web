@@ -86,9 +86,14 @@ export function normalize(rows: RawRow[]): { clean: CleanRow[]; tradeByGSTIN: Ma
   }
 
   const tradeByGSTIN = new Map<string,string>()
-  for (const [gstin, m] of tradeCounts) {
+  for (const [gstin, m] of Array.from(tradeCounts.entries())) {
     let best = '', cnt = -1
-    for (const [t, c] of m) { if (c > cnt) { best = t; cnt = c } }
+    for (const [t, c] of Array.from(m.entries())) {
+      if (c > cnt) {
+        best = t
+        cnt = c
+      }
+    }
     tradeByGSTIN.set(gstin, best)
   }
 
@@ -178,7 +183,7 @@ export function buildSumFunction(z: GroupedRow[], g: GroupedRow[]) {
 export function buildBillsWise(z: GroupedRow[], g: GroupedRow[], eps: number) {
   const leftMap  = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]))
   const rightMap = new Map(g.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]))
-  const keys = new Set<string>([...leftMap.keys(), ...rightMap.keys()])
+  const keys = new Set<string>(Array.from(leftMap.keys()).concat(Array.from(rightMap.keys())))
   const rows = [[
     'GSTIN of Supplier','Invoice Number',
     'Book: Invoice Value','2B: Invoice Value','Diff: Invoice Value',
@@ -219,7 +224,7 @@ export function buildGSTINWise(z: GroupedRow[], g: GroupedRow[], eps: number) {
     return m
   }
   const L = sumBy(z), R = sumBy(g)
-  const keys = new Set([...L.keys(), ...R.keys()])
+  const keys = new Set<string>(Array.from(L.keys()).concat(Array.from(R.keys())))
   const rows = [[
     'GSTIN of Supplier','Book: Invoice Value','2B: Invoice Value','Diff: Invoice Value','Book: Total Tax','2B: Total Tax','Diff: Total Tax','Book: Taxable','2B: Taxable','Diff: Taxable','Status'
   ]]
@@ -258,7 +263,7 @@ export function buildTradeWise(z: GroupedRow[], g: GroupedRow[], tradeByGSTIN: M
     return m
   }
   const L = roll(z), R = roll(g)
-  const keys = new Set([...L.keys(), ...R.keys()])
+  const keys = new Set<string>(Array.from(L.keys()).concat(Array.from(R.keys())))
   const rows = [[
     'Trade Name','Book: Invoice Value','2B: Invoice Value','Diff: Invoice Value','Book: Total Tax','2B: Total Tax','Diff: Total Tax','Book: Taxable','2B: Taxable','Diff: Taxable','Status'
   ]]
