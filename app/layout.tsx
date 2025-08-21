@@ -31,9 +31,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="mx-auto max-w-5xl px-6 py-4 text-sm flex items-center justify-between">
               <span className="font-medium">RV Solutions</span>
               <div className="text-right text-slate-600">
-                <div>Embrace Automation</div>
+                <div className="font-bold">Embrace Automation</div>
                 <div>Project Initiated by Vandana Ma&apos;m</div>
-                <div>Project Led by Harpinder Singh</div>
+                <div>Led by Harpinder Singh</div>
               </div>
             </div>
           </footer>
