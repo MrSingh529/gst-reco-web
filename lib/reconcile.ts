@@ -169,125 +169,129 @@ export function buildGSTRVsZoho(g: GroupedRow[], z: GroupedRow[], eps: number): 
   return rows;
 }
 
-export function buildSumFunction(z: GroupedRow[], g: GroupedRow[]) {
-  const tz = totals(z), tg = totals(g)
-  const rows = [[
-    'Particulars','Invoice Value','Integrated Tax (IGST)','Central Tax (CGST)','State Tax (SGST)','Taxable Value'
-  ]]
-  rows.push(['GST as Per Book Data', tz.inv_val, tz.igst, tz.cgst, tz.sgst, tz.taxable])
-  rows.push(['GST as Per GSTR-2B',   tg.inv_val, tg.igst, tg.cgst, tg.sgst, tg.taxable])
-  rows.push(['Difference',           tz.inv_val - tg.inv_val, tz.igst - tg.igst, tz.cgst - tg.cgst, tz.sgst - tg.sgst, tz.taxable - tg.taxable])
-  return rows
+export function buildSumFunction(z: GroupedRow[], g: GroupedRow[]): (string | number)[][] {
+  const tz = totals(z), tg = totals(g);
+  const rows: (string | number)[][] = [[
+    'Particulars', 'Invoice Value', 'Integrated Tax (IGST)', 'Central Tax (CGST)', 'State Tax (SGST)', 'Taxable Value'
+  ]];
+  rows.push(['GST as Per Book Data', tz.inv_val, tz.igst, tz.cgst, tz.sgst, tz.taxable]);
+  rows.push(['GST as Per GSTR-2B', tg.inv_val, tg.igst, tg.cgst, tg.sgst, tg.taxable]);
+  rows.push(['Difference', tz.inv_val - tg.inv_val, tz.igst - tg.igst, tz.cgst - tg.cgst, tz.sgst - tg.sgst, tz.taxable - tg.taxable]);
+  return rows;
 }
 
-export function buildBillsWise(z: GroupedRow[], g: GroupedRow[], eps: number) {
-  const leftMap  = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]))
-  const rightMap = new Map(g.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]))
-  const keys = new Set<string>(Array.from(leftMap.keys()).concat(Array.from(rightMap.keys())))
-  const rows = [[
-    'GSTIN of Supplier','Invoice Number',
-    'Book: Invoice Value','2B: Invoice Value','Diff: Invoice Value',
-    'Book: Total Tax','2B: Total Tax','Diff: Total Tax',
-    'Book: Taxable','2B: Taxable','Diff: Taxable','Status'
-  ]]
+export function buildBillsWise(z: GroupedRow[], g: GroupedRow[], eps: number): (string | number)[][] {
+  const leftMap = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+  const rightMap = new Map(g.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+  const keys = new Set<string>(Array.from(leftMap.keys()).concat(Array.from(rightMap.keys())));
+  const rows: (string | number)[][] = [[
+    'GSTIN of Supplier', 'Invoice Number',
+    'Book: Invoice Value', '2B: Invoice Value', 'Diff: Invoice Value',
+    'Book: Total Tax', '2B: Total Tax', 'Diff: Total Tax',
+    'Book: Taxable', '2B: Taxable', 'Diff: Taxable', 'Status'
+  ]];
   for (const k of Array.from(keys).sort()) {
-    const L = leftMap.get(k), R = rightMap.get(k)
-    const Ltot = (L?.igst || 0) + (L?.cgst || 0) + (L?.sgst || 0)
-    const Rtot = (R?.igst || 0) + (R?.cgst || 0) + (R?.sgst || 0)
-    const dInv = clamp((L?.inv_val || 0) - (R?.inv_val || 0), eps)
-    const dTax = clamp(Ltot - Rtot, eps)
-    const dTaxable = clamp((L?.taxable || 0) - (R?.taxable || 0), eps)
-    let status = 'Match'
-    const [gstin, inv] = k.split('|')
-    if (L && !R) status = 'Missing in 2B'
-    else if (!L && R) status = 'Missing in Book'
+    const L = leftMap.get(k), R = rightMap.get(k);
+    const Ltot = (L?.igst || 0) + (L?.cgst || 0) + (L?.sgst || 0);
+    const Rtot = (R?.igst || 0) + (R?.cgst || 0) + (R?.sgst || 0);
+    const dInv = clamp((L?.inv_val || 0) - (R?.inv_val || 0), eps);
+    const dTax = clamp(Ltot - Rtot, eps);
+    const dTaxable = clamp((L?.taxable || 0) - (R?.taxable || 0), eps);
+    let status = 'Match';
+    const [gstin, inv] = k.split('|');
+    if (L && !R) status = 'Missing in 2B';
+    else if (!L && R) status = 'Missing in Book';
     else {
-      const probs = [] as string[]
-      if (dInv !== 0) probs.push('Invoice')
-      if (dTax !== 0) probs.push('Tax')
-      if (dTaxable !== 0) probs.push('Taxable')
-      if (probs.length) status = 'Mismatch: ' + probs.join(', ')
+      const probs = [] as string[];
+      if (dInv !== 0) probs.push('Invoice');
+      if (dTax !== 0) probs.push('Tax');
+      if (dTaxable !== 0) probs.push('Taxable');
+      if (probs.length) status = 'Mismatch: ' + probs.join(', ');
     }
-    rows.push([gstin, inv, L?.inv_val || 0, R?.inv_val || 0, dInv, Ltot, Rtot, dTax, L?.taxable || 0, R?.taxable || 0, dTaxable, status])
+    rows.push([gstin, inv, L?.inv_val || 0, R?.inv_val || 0, dInv, Ltot, Rtot, dTax, L?.taxable || 0, R?.taxable || 0, dTaxable, status]);
   }
-  return rows
+  return rows;
 }
 
-export function buildGSTINWise(z: GroupedRow[], g: GroupedRow[], eps: number) {
+export function buildGSTINWise(z: GroupedRow[], g: GroupedRow[], eps: number): (string | number)[][] {
   const sumBy = (rows: GroupedRow[]) => {
-    const m = new Map<string, {inv_val:number; igst:number; cgst:number; sgst:number; taxable:number}>()
+    const m = new Map<string, { inv_val: number; igst: number; cgst: number; sgst: number; taxable: number }>();
     for (const r of rows) {
-      const cur = m.get(r.GSTIN_clean) || {inv_val:0,igst:0,cgst:0,sgst:0,taxable:0}
-      cur.inv_val += r.inv_val; cur.igst += r.igst; cur.cgst += r.cgst; cur.sgst += r.sgst; cur.taxable += r.taxable
-      m.set(r.GSTIN_clean, cur)
+      const cur = m.get(r.GSTIN_clean) || { inv_val: 0, igst: 0, cgst: 0, sgst: 0, taxable: 0 };
+      cur.inv_val += r.inv_val; cur.igst += r.igst; cur.cgst += r.cgst; cur.sgst += r.sgst; cur.taxable += r.taxable;
+      m.set(r.GSTIN_clean, cur);
     }
-    return m
-  }
-  const L = sumBy(z), R = sumBy(g)
-  const keys = new Set<string>(Array.from(L.keys()).concat(Array.from(R.keys())))
-  const rows = [[
-    'GSTIN of Supplier','Book: Invoice Value','2B: Invoice Value','Diff: Invoice Value','Book: Total Tax','2B: Total Tax','Diff: Total Tax','Book: Taxable','2B: Taxable','Diff: Taxable','Status'
-  ]]
+    return m;
+  };
+  const L = sumBy(z), R = sumBy(g);
+  const keys = new Set<string>(Array.from(L.keys()).concat(Array.from(R.keys())));
+  const rows: (string | number)[][] = [[
+    'GSTIN of Supplier', 'Book: Invoice Value', '2B: Invoice Value', 'Diff: Invoice Value',
+    'Book: Total Tax', '2B: Total Tax', 'Diff: Total Tax',
+    'Book: Taxable', '2B: Taxable', 'Diff: Taxable', 'Status'
+  ]];
   for (const gstin of Array.from(keys).sort()) {
-    const a = L.get(gstin) || {inv_val:0,igst:0,cgst:0,sgst:0,taxable:0}
-    const b = R.get(gstin) || {inv_val:0,igst:0,cgst:0,sgst:0,taxable:0}
-    const atax = a.igst + a.cgst + a.sgst
-    const btax = b.igst + b.cgst + b.sgst
-    const dInv = clamp(a.inv_val - b.inv_val, eps)
-    const dTax = clamp(atax - btax, eps)
-    const dTaxable = clamp(a.taxable - b.taxable, eps)
-    let status = 'Match'
-    if (!L.has(gstin) && R.has(gstin)) status = 'Missing in Book'
-    else if (L.has(gstin) && !R.has(gstin)) status = 'Missing in 2B'
+    const a = L.get(gstin) || { inv_val: 0, igst: 0, cgst: 0, sgst: 0, taxable: 0 };
+    const b = R.get(gstin) || { inv_val: 0, igst: 0, cgst: 0, sgst: 0, taxable: 0 };
+    const atax = a.igst + a.cgst + a.sgst;
+    const btax = b.igst + b.cgst + b.sgst;
+    const dInv = clamp(a.inv_val - b.inv_val, eps);
+    const dTax = clamp(atax - btax, eps);
+    const dTaxable = clamp(a.taxable - b.taxable, eps);
+    let status = 'Match';
+    if (!L.has(gstin) && R.has(gstin)) status = 'Missing in Book';
+    else if (L.has(gstin) && !R.has(gstin)) status = 'Missing in 2B';
     else {
-      const probs = [] as string[]
-      if (dInv !== 0) probs.push('Invoice')
-      if (dTax !== 0) probs.push('Tax')
-      if (dTaxable !== 0) probs.push('Taxable')
-      if (probs.length) status = 'Mismatch: ' + probs.join(', ')
+      const probs = [] as string[];
+      if (dInv !== 0) probs.push('Invoice');
+      if (dTax !== 0) probs.push('Tax');
+      if (dTaxable !== 0) probs.push('Taxable');
+      if (probs.length) status = 'Mismatch: ' + probs.join(', ');
     }
-    rows.push([gstin, a.inv_val, b.inv_val, dInv, atax, btax, dTax, a.taxable, b.taxable, dTaxable, status])
+    rows.push([gstin, a.inv_val, b.inv_val, dInv, atax, btax, dTax, a.taxable, b.taxable, dTaxable, status]);
   }
-  return rows
+  return rows;
 }
 
-export function buildTradeWise(z: GroupedRow[], g: GroupedRow[], tradeByGSTIN: Map<string,string>, eps: number) {
+export function buildTradeWise(z: GroupedRow[], g: GroupedRow[], tradeByGSTIN: Map<string, string>, eps: number): (string | number)[][] {
   const roll = (rows: GroupedRow[]) => {
-    const m = new Map<string, {inv_val:number; igst:number; cgst:number; sgst:number; taxable:number}>()
+    const m = new Map<string, { inv_val: number; igst: number; cgst: number; sgst: number; taxable: number }>();
     for (const r of rows) {
-      const trade = tradeByGSTIN.get(r.GSTIN_clean) || ''
-      const cur = m.get(trade) || {inv_val:0,igst:0,cgst:0,sgst:0,taxable:0}
-      cur.inv_val += r.inv_val; cur.igst += r.igst; cur.cgst += r.cgst; cur.sgst += r.sgst; cur.taxable += r.taxable
-      m.set(trade, cur)
+      const trade = tradeByGSTIN.get(r.GSTIN_clean) || '';
+      const cur = m.get(trade) || { inv_val: 0, igst: 0, cgst: 0, sgst: 0, taxable: 0 };
+      cur.inv_val += r.inv_val; cur.igst += r.igst; cur.cgst += r.cgst; cur.sgst += r.sgst; cur.taxable += r.taxable;
+      m.set(trade, cur);
     }
-    return m
-  }
-  const L = roll(z), R = roll(g)
-  const keys = new Set<string>(Array.from(L.keys()).concat(Array.from(R.keys())))
-  const rows = [[
-    'Trade Name','Book: Invoice Value','2B: Invoice Value','Diff: Invoice Value','Book: Total Tax','2B: Total Tax','Diff: Total Tax','Book: Taxable','2B: Taxable','Diff: Taxable','Status'
-  ]]
+    return m;
+  };
+  const L = roll(z), R = roll(g);
+  const keys = new Set<string>(Array.from(L.keys()).concat(Array.from(R.keys())));
+  const rows: (string | number)[][] = [[
+    'Trade Name', 'Book: Invoice Value', '2B: Invoice Value', 'Diff: Invoice Value',
+    'Book: Total Tax', '2B: Total Tax', 'Diff: Total Tax',
+    'Book: Taxable', '2B: Taxable', 'Diff: Taxable', 'Status'
+  ]];
   for (const trade of Array.from(keys).sort()) {
-    const a = L.get(trade) || {inv_val:0,igst:0,cgst:0,sgst:0,taxable:0}
-    const b = R.get(trade) || {inv_val:0,igst:0,cgst:0,sgst:0,taxable:0}
-    const atax = a.igst + a.cgst + a.sgst
-    const btax = b.igst + b.cgst + b.sgst
-    const dInv = clamp(a.inv_val - b.inv_val, eps)
-    const dTax = clamp(atax - btax, eps)
-    const dTaxable = clamp(a.taxable - b.taxable, eps)
-    let status = 'Match'
-    if (!L.has(trade) && R.has(trade)) status = 'Missing in Book'
-    else if (L.has(trade) && !R.has(trade)) status = 'Missing in 2B'
+    const a = L.get(trade) || { inv_val: 0, igst: 0, cgst: 0, sgst: 0, taxable: 0 };
+    const b = R.get(trade) || { inv_val: 0, igst: 0, cgst: 0, sgst: 0, taxable: 0 };
+    const atax = a.igst + a.cgst + a.sgst;
+    const btax = b.igst + b.cgst + b.sgst;
+    const dInv = clamp(a.inv_val - b.inv_val, eps);
+    const dTax = clamp(atax - btax, eps);
+    const dTaxable = clamp(a.taxable - b.taxable, eps);
+    let status = 'Match';
+    if (!L.has(trade) && R.has(trade)) status = 'Missing in Book';
+    else if (L.has(trade) && !R.has(trade)) status = 'Missing in 2B';
     else {
-      const probs = [] as string[]
-      if (dInv !== 0) probs.push('Invoice')
-      if (dTax !== 0) probs.push('Tax')
-      if (dTaxable !== 0) probs.push('Taxable')
-      if (probs.length) status = 'Mismatch: ' + probs.join(', ')
+      const probs = [] as string[];
+      if (dInv !== 0) probs.push('Invoice');
+      if (dTax !== 0) probs.push('Tax');
+      if (dTaxable !== 0) probs.push('Taxable');
+      if (probs.length) status = 'Mismatch: ' + probs.join(', ');
     }
-    rows.push([trade, a.inv_val, b.inv_val, dInv, atax, btax, dTax, a.taxable, b.taxable, dTaxable, status])
+    rows.push([trade, a.inv_val, b.inv_val, dInv, atax, btax, dTax, a.taxable, b.taxable, dTaxable, status]);
   }
-  return rows
+  return rows;
 }
 
 export function buildWorkbook(aoaByName: Record<string, (string | number)[][]>) {
