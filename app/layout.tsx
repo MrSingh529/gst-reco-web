@@ -30,7 +30,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <footer className="mt-12 border-t bg-white/70 backdrop-blur">
             <div className="mx-auto max-w-5xl px-6 py-4 text-sm flex items-center justify-between">
               <span className="font-medium">RV Solutions</span>
-              <span className="text-slate-600">Embrace Automation — Harpinder Singh</span>
+              <div className="text-right text-slate-600">
+                <div>Embrace Automation</div>
+                <div>Project Initiated by Vandana Ma'am</div>
+                <div>Project Led by Harpinder Singh</div>
+              </div>
             </div>
           </footer>
         </div>
