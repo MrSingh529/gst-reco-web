@@ -137,9 +137,15 @@ export function totals(rows: {inv_val:number; igst:number; cgst:number; sgst:num
 
 // ----- Builders for each output sheet (return AOA = array of arrays) -----
 
-export function buildZohoVsGSTR(z: GroupedRow[], g: GroupedRow[], eps: number): (string | number)[][] {
+export function buildZohoVsGSTR(
+  z: GroupedRow[],
+  g: GroupedRow[],
+  tradeByGSTIN: Map<string, string>,
+  eps: number
+): (string | number)[][] {
   const rightMap = new Map(g.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
   const rows: (string | number)[][] = [[
+    'Trade Name',
     'Invoice Number from Purchase Book',
     'Invoice Value from Purchase Book',
     'Invoice Value from GSTR-2B',
@@ -148,14 +154,21 @@ export function buildZohoVsGSTR(z: GroupedRow[], g: GroupedRow[], eps: number): 
   for (const L of z) {
     const R = rightMap.get(`${L.GSTIN_clean}|${L.INV_clean}`);
     const diff = clamp(L.inv_val - (R?.inv_val || 0), eps);
-    rows.push([L.INV_clean, L.inv_val, R?.inv_val || 0, diff]);
+    const trade = tradeByGSTIN.get(L.GSTIN_clean) || '';
+    rows.push([trade, L.INV_clean, L.inv_val, R?.inv_val || 0, diff]);
   }
   return rows;
 }
 
-export function buildGSTRVsZoho(g: GroupedRow[], z: GroupedRow[], eps: number): (string | number)[][] {
+export function buildGSTRVsZoho(
+  g: GroupedRow[],
+  z: GroupedRow[],
+  tradeByGSTIN: Map<string, string>,
+  eps: number
+): (string | number)[][] {
   const rightMap = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
   const rows: (string | number)[][] = [[
+    'Trade Name',
     'Invoice Number from GSTR-2B',
     'Invoice Value from GSTR-2B',
     'Invoice Value from Purchase Book',
@@ -164,7 +177,8 @@ export function buildGSTRVsZoho(g: GroupedRow[], z: GroupedRow[], eps: number): 
   for (const L of g) {
     const R = rightMap.get(`${L.GSTIN_clean}|${L.INV_clean}`);
     const diff = clamp(L.inv_val - (R?.inv_val || 0), eps);
-    rows.push([L.INV_clean, L.inv_val, R?.inv_val || 0, diff]);
+    const trade = tradeByGSTIN.get(L.GSTIN_clean) || '';
+    rows.push([trade, L.INV_clean, L.inv_val, R?.inv_val || 0, diff]);
   }
   return rows;
 }

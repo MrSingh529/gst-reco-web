@@ -41,12 +41,12 @@ export default function Page() {
       const zohoGrp = groupByGSTINInv(zohoClean)
 
       const aoa = {
-        'Zoho Book Vs GSTR': buildZohoVsGSTR(zohoGrp, g2bGrp, eps),
-        'GSTR VS Zoho Book': buildGSTRVsZoho(g2bGrp, zohoGrp, eps),
-        'Sum Function':      buildSumFunction(zohoGrp, g2bGrp),
-        'Bills Wise Summary':  buildBillsWise(zohoGrp, g2bGrp, eps),
-        'GSTIN Wise Summary':  buildGSTINWise(zohoGrp, g2bGrp, eps),
-        'Trade Name Wise Summary': buildTradeWise(zohoGrp, g2bGrp, tradeByGSTIN, eps),
+        'Zoho Book Vs GSTR':         buildZohoVsGSTR(zohoGrp, g2bGrp, tradeByGSTIN, eps),
+        'GSTR VS Zoho Book':         buildGSTRVsZoho(g2bGrp, zohoGrp, tradeByGSTIN, eps),
+        'Sum Function':              buildSumFunction(zohoGrp, g2bGrp),
+        'Bills Wise Summary':        buildBillsWise(zohoGrp, g2bGrp, eps),
+        'GSTIN Wise Summary':        buildGSTINWise(zohoGrp, g2bGrp, eps),
+        'Trade Name Wise Summary':   buildTradeWise(zohoGrp, g2bGrp, tradeByGSTIN, eps),
       } as const
 
       const wbOut = buildWorkbook(aoa)
