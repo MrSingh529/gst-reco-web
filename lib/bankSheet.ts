@@ -35,9 +35,9 @@ export function annotateStatement(wsIn: XLSX.WorkSheet): XLSX.WorkSheet {
     const alreadyRem = String(row[remCol] ?? '').trim()
     if (alreadyDiv && alreadyRem) continue // don’t overwrite manual entries
 
-    const { division, remarks } = classifyNarration(narration)
+    const { division, remark } = classifyNarration(narration)
     if (!alreadyDiv) row[divCol] = division
-    if (!alreadyRem) row[remCol] = remarks
+    if (!alreadyRem) row[remCol] = remark ?? ''
     aoa[r] = row
   }
 
