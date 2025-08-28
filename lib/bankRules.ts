@@ -79,6 +79,7 @@ export const FALLBACK_RULES: Rule[] = [
 export function classifyNarration(narr: string): { division: Div; remark?: string } {
   const raw = narr || '';
   for (const rule of [...PRIORITY_RULES, ...FALLBACK_RULES]) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const match = typeof rule.test === 'function' ? (rule.test(raw) ? [] as any : null) : raw.match(rule.test);
     if (!match) continue;
     const division = typeof rule.division === 'function' ? rule.division(raw, match) : (rule.division ?? 'Common');

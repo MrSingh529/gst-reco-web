@@ -20,8 +20,12 @@ export default function Page() {
       XLSX.utils.book_append_sheet(wbOut, wsOut, firstSheetName)
       XLSX.writeFile(wbOut, `statement_classified.xlsx`)
       setLog('✅ Done. Downloaded: statement_classified.xlsx')
-    } catch (e: any) {
-      setLog('❌ ' + e.message)
+    } catch (e) {
+      if (e instanceof Error) {
+        setLog('❌ ' + e.message)
+      } else {
+        setLog('❌ An unknown error occurred')
+      }
     }
   }
 
