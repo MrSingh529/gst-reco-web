@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import KillSW from '../components/KillSW'
+import Link from 'next/link'
 
 export const metadata: Metadata = {
   title: 'GST Reconciliation | RV Solutions',
@@ -22,6 +23,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <div className="text-[11px] text-slate-500">RV-Side • Privacy-Safe</div>
                 </div>
               </div>
+              <nav className="flex items-center gap-6 text-sm">
+                <Link href="/">GST Reco</Link>
+                <Link href="/bank-classify">Bank Classifier</Link>
+              </nav>
             </div>
           </header>
 

@@ -147,15 +147,15 @@ export function buildZohoVsGSTR(
   const rows: (string | number)[][] = [[
     'Trade Name',
     'Invoice Number from Purchase Book',
-    'Invoice Value from Purchase Book',
-    'Invoice Value from GSTR-2B',
+    'Taxable Value from Purchase Book',
+    'Taxable Value from GSTR-2B',
     'Difference'
   ]];
   for (const L of z) {
     const R = rightMap.get(`${L.GSTIN_clean}|${L.INV_clean}`);
-    const diff = clamp(L.inv_val - (R?.inv_val || 0), eps);
+    const diff = clamp(L.taxable - (R?.taxable || 0), eps);
     const trade = tradeByGSTIN.get(L.GSTIN_clean) || '';
-    rows.push([trade, L.INV_clean, L.inv_val, R?.inv_val || 0, diff]);
+    rows.push([trade, L.INV_clean, L.taxable, R?.taxable || 0, diff]);
   }
   return rows;
 }
@@ -170,15 +170,15 @@ export function buildGSTRVsZoho(
   const rows: (string | number)[][] = [[
     'Trade Name',
     'Invoice Number from GSTR-2B',
-    'Invoice Value from GSTR-2B',
-    'Invoice Value from Purchase Book',
+    'Taxable Value from GSTR-2B',
+    'Taxable Value from Purchase Book',
     'Difference'
   ]];
   for (const L of g) {
     const R = rightMap.get(`${L.GSTIN_clean}|${L.INV_clean}`);
-    const diff = clamp(L.inv_val - (R?.inv_val || 0), eps);
+    const diff = clamp(L.taxable - (R?.taxable || 0), eps);
     const trade = tradeByGSTIN.get(L.GSTIN_clean) || '';
-    rows.push([trade, L.INV_clean, L.inv_val, R?.inv_val || 0, diff]);
+    rows.push([trade, L.INV_clean, L.taxable, R?.taxable || 0, diff]);
   }
   return rows;
 }
