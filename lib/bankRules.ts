@@ -76,15 +76,35 @@ export const FALLBACK_RULES: Rule[] = [
 ];
 
 /** ---------- Classifier ---------- */
-export function classifyNarration(narr: string): { division: Div; remark?: string } {
-  const raw = narr || '';
+export function classifyNarration(
+  narr: string
+): { division: Div; remark?: string } {
+  const raw = narr ?? '';
+
+  // walk rules in priority order
   for (const rule of [...PRIORITY_RULES, ...FALLBACK_RULES]) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const match = typeof rule.test === 'function' ? (rule.test(raw) ? [] as any : null) : raw.match(rule.test);
-    if (!match) continue;
-    const division = typeof rule.division === 'function' ? rule.division(raw, match) : (rule.division ?? 'Common');
-    const remark = typeof rule.remark === 'function' ? rule.remark(raw) : rule.remark;
+    // If test is a function, we only have a boolean “hit”; if it’s a RegExp,
+    // we also keep the match groups for rules that need them.
+    const match: RegExpMatchArray | null =
+      typeof rule.test === 'function' ? null : raw.match(rule.test);
+
+    const hit =
+      typeof rule.test === 'function' ? (rule.test as (s: string) => boolean)(raw) : match !== null;
+
+    if (!hit) continue;
+
+    const division =
+      typeof rule.division === 'function'
+        ? (rule.division as (s: string, m?: RegExpMatchArray) => Div)(raw, match ?? undefined)
+        : (rule.division ?? 'Common');
+
+    const remark =
+      typeof rule.remark === 'function'
+        ? (rule.remark as (s: string) => string | undefined)(raw)
+        : rule.remark;
+
     return { division, remark };
   }
+
   return { division: 'Common' };
 }
