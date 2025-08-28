@@ -18,9 +18,6 @@ export default function Page() {
       const firstSheetName = wb.SheetNames[0]
       const ws = wb.Sheets[firstSheetName]
 
-      // Parse rows if needed (optional, but shows the type usage)
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' }) as RawRow[]
-
       const wsOut = annotateStatement(ws)
       const wbOut = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wbOut, wsOut, firstSheetName)
