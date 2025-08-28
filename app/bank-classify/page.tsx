@@ -3,8 +3,6 @@ import React, { useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { annotateStatement } from '@/lib/bankSheet'
 
-type RawRow = Record<string, unknown> // Type for rows from Excel
-
 export default function Page() {
   const [log, setLog] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -12,16 +10,15 @@ export default function Page() {
   async function handleFile(file: File) {
     try {
       setLog('Processing…')
-
       const buf = await file.arrayBuffer()
-      const wb: XLSX.WorkBook = XLSX.read(buf, { type: 'array' })
+      const wb = XLSX.read(buf, { type: 'array' })
       const firstSheetName = wb.SheetNames[0]
       const ws = wb.Sheets[firstSheetName]
 
       const wsOut = annotateStatement(ws)
       const wbOut = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wbOut, wsOut, firstSheetName)
-      XLSX.writeFile(wbOut, `statement_classified.xlsx`)
+      XLSX.writeFile(wbOut, 'statement_classified.xlsx')
 
       setLog('✅ Done. Downloaded: statement_classified.xlsx')
     } catch (e) {
@@ -30,7 +27,6 @@ export default function Page() {
     }
   }
 
-  // Event handler with proper type
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (file) handleFile(file)
@@ -53,13 +49,15 @@ export default function Page() {
         Choose Excel
       </button>
 
-      <div className={`mt-4 rounded-md border p-3 text-sm ${
-        log.startsWith('✅')
-          ? 'border-emerald-300 text-emerald-800'
-          : log.startsWith('❌')
-          ? 'border-rose-300 text-rose-800'
-          : 'border-slate-200 text-slate-700'
-      }`}>
+      <div
+        className={`mt-4 rounded-md border p-3 text-sm ${
+          log.startsWith('✅')
+            ? 'border-emerald-300 text-emerald-800'
+            : log.startsWith('❌')
+            ? 'border-rose-300 text-rose-800'
+            : 'border-slate-200 text-slate-700'
+        }`}
+      >
         {log || 'No run yet.'}
       </div>
 
