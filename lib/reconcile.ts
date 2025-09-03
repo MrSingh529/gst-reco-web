@@ -39,7 +39,7 @@ function cleanInv(s: unknown): string {
   v = v.replace(/\\/g, '/')
   v = v.replace(/^0+([1-9])/, '$1')
   return v
-}
+} 
 function cleanTrade(s: unknown): string {
   return asString(s).toUpperCase().trim().replace(/\s+/g, ' ')
 }
