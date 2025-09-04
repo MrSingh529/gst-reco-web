@@ -13,22 +13,66 @@ const R = (test: string | RegExp, division?: Rule['division'], remark?: Rule['re
 
 /** ---------- HIGH-PRIORITY, most specific first ---------- */
 export const PRIORITY_RULES: Rule[] = [
+  {
+    test: /BONSAI ENTERPRISES PVT LTD/i,
+    division: 'TSG',
+    remark: (raw: string) => {
+      const isDebit = /\bDR\b/i.test(raw);
+      const isCredit = /\bCR\b/i.test(raw);
+      if (isDebit) return 'Vendor';
+      if (isCredit) return 'Bonsai';
+      return 'Bonsai'; // fallback
+    }
+  },
+
+  {
+    test: /DD ISSUE.*TN CIRCLE/i,
+    division: 'TSG',
+    remark: 'EMD'
+  },
+
+  // USD amounts above 1000
+  {
+    test: (raw: string) => {
+      const usdMatch = raw.match(/USD(\d+(?:\.\d{1,2})?)@/i);
+      if (!usdMatch) return false;
+      const amount = parseFloat(usdMatch[1]);
+      return amount > 1000;
+    },
+    division: 'TSG',
+    remark: 'YTL'
+  },
+
+  // Strings starting with 4200
+  {
+    test: /^4200/,
+    division: 'TSG',
+    remark: 'Reliance'
+  },
+
+  // DD Issue with BSNL - should come before generic DD ISSUE rule
+  {
+    test: /DD ISSUE.*BSNL/i,
+    division: 'TSG',
+    remark: 'EMD'
+  },
+  
   // Named entities / vendors
   R('NATIONAL INFORMATICS CENTRE SERVICE', 'ITSS', 'NICSI'),
   R('BHARTI HEXACOM', 'TSG', 'Bharti'),
-  R('BEETEL TELETECH', 'TSG', 'Beetel'),
+  R('BEETEL TELETECH', 'TSG', 'Bharti'),
   R('ZTE', 'TSG', 'ZTE'),
   R('BHARAT SANCHAR NIGAM', 'TSG', 'BSNL'),
   R('VODAFONE IDEA', 'TSG', 'Vodafone'),
   R('INDUS TOWERS', 'TSG', 'Indus'),
-  R('BHARTI AIRTEL', 'TSG', 'Airtel'),
+  R('BHARTI AIRTEL', 'TSG', 'Bharti'),
   R('MANTARAV', 'ITSS', 'Mantrav'),
   R('LARSEN AND TOUBRO', 'TSG', 'L&T'),
   R('KIRAN MALIK', 'TSG', 'Rent'),
   R('NEERU CHHABRA', 'Common', 'Rent'),
   R(/SAMSUNG INDIA ELECTRONICS (PVT|PRIVATE)/, 'CSD', 'Samsung'),
   R('SAMSUNG BHIWANI', 'CSD', 'Samsung Bhiwani'),
-  R('ADISOFT', 'ITSS', 'Adisoft'),
+  R('ADISOFT', 'TSG', 'Adisoft'),
   R('SOHAM ENTERPRISES', 'TSG', 'Vendor'),
   R('MC CANCELLED', 'Common', 'EMD'),
   R('BONSAI ENTERPRISES PVT LTD', 'TSG', 'Vendor'),
@@ -37,7 +81,7 @@ export const PRIORITY_RULES: Rule[] = [
   R('VERTIV ENERGY PRIVATE LIMITED', 'TSG', 'Vertiv'),
   R('INDOFAST SWAP ENERGY PRIVATE LIMITED', 'TSG', 'Indofast'),
   R('DD/MC CANCELLATION', 'TSG', 'Bank Charges'),
-  R('BILLDKUPPOWERCORPLTD', 'Common', 'Electricity'),
+  R('BILLDKUPPOWER CORPLTD', 'Common', 'Electricity'),
   R('EPFO', 'Common', 'EPFO'),
   R('ACME DIGITEK SOLUTIONS PRIVATE', 'ITSS', 'Digitek'),
   R('04850330000355', 'TSG', 'ATC'),
@@ -54,16 +98,62 @@ export const PRIORITY_RULES: Rule[] = [
   R('UVASKA', 'TSG', 'Uvaska'),
   R('RV SOLUTIONS PRIVATE LIMITED-R V SOLUTIONS PVT LTD', 'Common', 'Interbank'),
   R('RV SOLUTIONS PRIVATE LIMITED-RV SOLUTIONS PVT LTD', 'Common', 'Interbank'),
-  R(/\bSALARY\s+ITC\b/i, 'ITSS', 'Salary'),
+  R(/\bSALARY\s+ITC\b/i, 'ITSS', 'Manpower'),
   R('TOYOTAFINANCIALSERVI','Common','Loan'),
   R(/VENDOR\s+PAYMENT\s+CSD/i, 'CSD', 'Vendor payment'),
   R(/VENDOR\s+PAYMENT\s+ITC?/i, 'ITSS', 'Vendor payment'),
   R(/VENDOR\s+PAYMENT\s+COM/i, 'Common', 'Vendor payment'),
   R(/FT\s*-\s*SALARY\s+ADV\s+IT\b/i, 'ITSS', 'Salary Adv'),
   R(/\bSALARY\s+IT\b/i, 'ITSS', 'Salary'),
+  R('GST/BANK', '', 'GST'),
+  R('CBDT/BANK', 'Common', 'TDS'),
   R('DD ISSUE', '', 'EMD'),
+  R('TRAVELS COM', 'Common', 'Imprest'),
+  R('ESCROW', 'CSD', 'ESC'),
+  R('CMS INFO SYSTEMS LIMITED', 'CSD', 'CMS'),
+  R('LIFELONG', 'CSD', 'Lifelong'),
+  R('RV 786 TO 7600-RV SOLUTIONS PRIVATE LIMITED', 'Common', 'Interbank'),
+  R('CUSHMAN AND WAKEFIELD PROPERTY', 'CSD', 'Cushman'),
+  R('50200064467600 - RV SOLUTIONS PRIVATE LIMITED', 'Common', 'Interbank'),
+  R('ONSITE ELECTRO', 'CSD', 'Onsite'),
+  R('RVS TO VS LOAN', 'Common', 'VS Loan'),
+  R('INFO TECH CORPORATION OF GOA LIMITED', 'ITSS', 'ITG GOA'),
+  R('DADAR HOUSEKEEPING', 'CSD', 'Vendor'),
+  R('DADAR TEA EXPENSE', 'CSD', 'Vendor'),
+  R('DADAR WATER EXPENS', 'CSD', 'Vendor'),
+  R('AMAZON SELLER', 'CSD', 'Amazon'),
+  R('HDFC 786 TO 7600-RV SOLUTIONS PRIVATE LIMITED', 'Common', 'Interbank'),
+  R('TRANSFER TO 7600-RV SOLUTIONS PRIVATE LIMITED', 'Common', 'Interbank'),
+  R('TPT-TRF-RV SOLUTIONS PRIVATE LIMITED', 'Common', 'Interbank'),
+  R('HDFC1P-442145XXXXXX9300', 'TSG', 'CREDIT Card'),
+  R('HDFC1P-442145XXXXXX8914', 'TSG', 'CREDIT Card'),
+  R('QDIGI SERVICES LIMITED', 'CSD', 'Qdigi'),
+  R('NIBIT INTERNATIONAL PRIVATE', 'CSD', 'Nibit'),
+  R('BHIWANI TEA VENDOR', 'CSD', 'Vendor'),
+  R('LENOVO (INDIA) PVT LTD', 'CSD', 'Lenovo'),
+  R('IMAGINE MARKETING LIMITED', 'CSD', 'Boat'),
+  R('SERVICE CHARGES', '', 'Bank Charges'),
+  R('UPI SETTLEMENT', 'CSD', 'ESC'),
+  R('NASHIK TEA EXPENSE', 'CSD', 'Vendor'),
+  R('NASHIK HOUSE KEEPI', 'CSD', 'Vendor'),
+  R('HDFC1P-442145XXXXXX7123', 'Common', 'CREDIT Card'),
+  R('PSAV GLOBAL TECH PRIVATE LIMITED', 'CSD', 'Honor'),
+  R('AHMEDABAD HOUSE KE', 'CSD', 'Vendor'),
+  R('SONIPAT-NETBANK', 'CSD', 'Samsung Sonipat'),
+  R('CANDES TECHNOLOGY PRIVATE LIMITED', 'CSD', 'Candes'),
+  R('REIM', '', 'Reimbursement'),
+  R('GUARANTEE ISSUED', '', 'Bank Guarantee'),
+  R('INS_LOMB_BBG', 'Common', 'Insurance'),
+  R('18972560000575 - RV SOLUTIONS PRIVATE LIMITED', 'Common', 'Interbank'),
+  R('GUARANTEE AMENDMENT', '', 'Bank Guarantee'),
+  R('INTEREST DEBITED', 'Common', 'Interest'),
+  R('IMPS CHG', 'Common', 'Bank Charges'),
+  R('GST', '', 'GST'),
+  R('JPMC', 'TSG', 'Honeywell'),
+  R('20082560000786 - RV SOLUTIONS PRIVATE LIMITED', 'Common', 'Interbank'),
+  R('RV Solutions PriVATE', 'Common', 'Interbank'),
 
-  // Imprest with explicit division tag (fixes “IMPREST CSD/IT/COM”)
+  // Imprest with explicit division tag (fixes "IMPREST CSD/IT/COM")
   {
     test: /IMPREST\s+(CSD|COM|ITC?|IT)\b/i,
     division: (_raw, m) => {
@@ -108,7 +198,8 @@ export const FALLBACK_RULES: Rule[] = [
     test: /\bCSD\b/i,
     division: 'CSD',
     remark: (s) =>
-      /\bFNF\b/i.test(s) ? 'FNF'
+      /SALARY/i.test(s) ? 'Salary'
+      : /\bFNF\b/i.test(s) ? 'FNF'
       : /\bRENT\b/i.test(s) ? 'Rent'
       : /\bVENDOR/i.test(s) ? 'Vendor payment'
       : undefined,
@@ -137,7 +228,7 @@ export const FALLBACK_RULES: Rule[] = [
 /** ---------- Classifier ---------- */
 export function classifyNarration(
   narr: string
-): { division?: Div; remark?: string } { // notice `division?` is now optional
+): { division?: Div; remark?: string } {
   const raw = narr ?? '';
 
   for (const rule of [...PRIORITY_RULES, ...FALLBACK_RULES]) {
