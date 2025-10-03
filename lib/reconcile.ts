@@ -308,6 +308,59 @@ export function buildTradeWise(z: GroupedRow[], g: GroupedRow[], tradeByGSTIN: M
   return rows;
 }
 
+export function buildMatchedTaxableByGSTIN(
+  z: GroupedRow[],
+  g: GroupedRow[],
+  tradeByGSTIN: Map<string, string>,
+  eps: number
+): (string | number)[][] {
+  const leftMap = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+  const rightMap = new Map(g.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+
+  type Agg = { count: number; bookTaxable: number; gstrTaxable: number };
+  const agg = new Map<string, Agg>();
+
+  // consider only keys present on both sides
+  for (const [k, L] of leftMap.entries()) {
+    const R = rightMap.get(k);
+    if (!R) continue;
+    const dTaxable = Math.abs(L.taxable - R.taxable) <= eps ? 0 : (L.taxable - R.taxable);
+    if (dTaxable !== 0) continue; // keep only matched taxable
+
+    const gstin = L.GSTIN_clean;
+    const cur = agg.get(gstin) || { count: 0, bookTaxable: 0, gstrTaxable: 0 };
+    cur.count += 1;
+    cur.bookTaxable += L.taxable;
+    cur.gstrTaxable += R.taxable;
+    agg.set(gstin, cur);
+  }
+
+  const rows: (string | number)[][] = [[
+    'GSTIN of Supplier',
+    'Trade Name',
+    'Matched Invoices (Taxable)',
+    'Book: Taxable (Matched)',
+    '2B: Taxable (Matched)',
+    'Diff: Taxable (Matched)'
+  ]];
+
+  // stable sort by GSTIN
+  const ordered = Array.from(agg.entries()).sort(([a], [b]) => a.localeCompare(b));
+
+  let grandCount = 0, grandBook = 0, grandGstr = 0;
+  for (const [gstin, a] of ordered) {
+    const trade = tradeByGSTIN.get(gstin) || '';
+    const diff = a.bookTaxable - a.gstrTaxable; // should be ~0
+    rows.push([gstin, trade, a.count, a.bookTaxable, a.gstrTaxable, diff]);
+    grandCount += a.count; grandBook += a.bookTaxable; grandGstr += a.gstrTaxable;
+  }
+
+  rows.push([]);
+  rows.push(['Grand Total', '', grandCount, grandBook, grandGstr, grandBook - grandGstr]);
+
+  return rows;
+}
+
 export function buildWorkbook(aoaByName: Record<string, (string | number)[][]>) {
   const wb = XLSX.utils.book_new()
   for (const [name, aoa] of Object.entries(aoaByName)) {

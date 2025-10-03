@@ -47,6 +47,7 @@ export default function Page() {
         'Bills Wise Summary':        buildBillsWise(zohoGrp, g2bGrp, eps),
         'GSTIN Wise Summary':        buildGSTINWise(zohoGrp, g2bGrp, eps),
         'Trade Name Wise Summary':   buildTradeWise(zohoGrp, g2bGrp, tradeByGSTIN, eps),
+        'Matched Taxable by GSTIN':  buildMatchedTaxableByGSTIN(zohoGrp, g2bGrp, tradeByGSTIN, eps),
       } as const
 
       const wbOut = buildWorkbook(aoa)
