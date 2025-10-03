@@ -321,7 +321,7 @@ export function buildMatchedTaxableByGSTIN(
   const agg = new Map<string, Agg>();
 
   // consider only keys present on both sides
-  for (const [k, L] of leftMap.entries()) {
+  for (const [k, L] of Array.from(leftMap.entries())) {
     const R = rightMap.get(k);
     if (!R) continue;
     const dTaxable = Math.abs(L.taxable - R.taxable) <= eps ? 0 : (L.taxable - R.taxable);
@@ -333,7 +333,7 @@ export function buildMatchedTaxableByGSTIN(
     cur.bookTaxable += L.taxable;
     cur.gstrTaxable += R.taxable;
     agg.set(gstin, cur);
-  }
+}
 
   const rows: (string | number)[][] = [[
     'GSTIN of Supplier',
