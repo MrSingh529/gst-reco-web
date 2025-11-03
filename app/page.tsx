@@ -7,6 +7,7 @@ import {
   buildZohoVsGSTR, buildGSTRVsZoho, buildSumFunction,
   buildBillsWise, buildGSTINWise, buildTradeWise,
   buildWorkbook, EPS_DEFAULT, buildMatchedTaxableByGSTIN,
+  buildInvoiceWise,
 } from '@/lib/reconcile'
 
 export default function Page() {
@@ -48,6 +49,7 @@ export default function Page() {
         'GSTIN Wise Summary':        buildGSTINWise(zohoGrp, g2bGrp, eps),
         'Trade Name Wise Summary':   buildTradeWise(zohoGrp, g2bGrp, tradeByGSTIN, eps),
         'Matched Taxable by GSTIN':  buildMatchedTaxableByGSTIN(zohoGrp, g2bGrp, tradeByGSTIN, eps),
+        'Invoice Wise':              buildInvoiceWise(zohoGrp, g2bGrp, tradeByGSTIN, eps),
       } as const
 
       const wbOut = buildWorkbook(aoa)

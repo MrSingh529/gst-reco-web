@@ -361,6 +361,96 @@ export function buildMatchedTaxableByGSTIN(
   return rows;
 }
 
+export function buildInvoiceWise(
+  z: GroupedRow[],
+  g: GroupedRow[],
+  tradeByGSTIN: Map<string, string>,
+  eps: number
+): (string | number)[][] {
+  const leftMap = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+  const rightMap = new Map(g.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+
+  const rows: (string | number)[][] = [[
+    'GSTIN of Supplier',
+    'Trade Name',
+    'Invoice Number',
+    'Book: Invoice Value',
+    '2B: Invoice Value',
+    'Book: Total Tax',
+    '2B: Total Tax',
+    'Book: Taxable Value',
+    '2B: Taxable Value',
+    'Match Status'
+  ]];
+
+  // Track totals for summary
+  let totalMatched = 0;
+  let bookInvTotal = 0, gstrInvTotal = 0;
+  let bookTaxTotal = 0, gstrTaxTotal = 0;
+  let bookTaxableTotal = 0, gstrTaxableTotal = 0;
+
+  // Iterate through all invoices present in both datasets
+  for (const [key, L] of Array.from(leftMap.entries())) {
+    const R = rightMap.get(key);
+    
+    // Skip if not present in both sides
+    if (!R) continue;
+
+    const [gstin, inv] = key.split('|');
+    const trade = tradeByGSTIN.get(gstin) || '';
+
+    // Calculate total tax
+    const LTax = L.igst + L.cgst + L.sgst;
+    const RTax = R.igst + R.cgst + R.sgst;
+
+    // Check if all three match: Invoice Value, Total Tax, Taxable Value
+    const invMatch = Math.abs(L.inv_val - R.inv_val) <= eps;
+    const taxMatch = Math.abs(LTax - RTax) <= eps;
+    const taxableMatch = Math.abs(L.taxable - R.taxable) <= eps;
+
+    // Only include if GSTIN, Invoice Number, and all amounts match
+    if (invMatch && taxMatch && taxableMatch) {
+      rows.push([
+        gstin,
+        trade,
+        inv,
+        L.inv_val,
+        R.inv_val,
+        LTax,
+        RTax,
+        L.taxable,
+        R.taxable,
+        'Perfect Match'
+      ]);
+
+      totalMatched++;
+      bookInvTotal += L.inv_val;
+      gstrInvTotal += R.inv_val;
+      bookTaxTotal += LTax;
+      gstrTaxTotal += RTax;
+      bookTaxableTotal += L.taxable;
+      gstrTaxableTotal += R.taxable;
+    }
+  }
+
+  // Add summary rows
+  rows.push([]);
+  rows.push([
+    'Total Matched Invoices',
+    '',
+    totalMatched,
+    bookInvTotal,
+    gstrInvTotal,
+    bookTaxTotal,
+    gstrTaxTotal,
+    bookTaxableTotal,
+    gstrTaxableTotal,
+    ''
+  ]);
+
+  return rows;
+}
+
 export function buildWorkbook(aoaByName: Record<string, (string | number)[][]>) {
   const wb = XLSX.utils.book_new()
   for (const [name, aoa] of Object.entries(aoaByName)) {
