@@ -6,6 +6,18 @@ const isProd = process.env.NODE_ENV === 'production'
 /** @type {import('next').NextConfig} */
 const baseConfig = {
   reactStrictMode: true,
+  // Add environment variable exposure for Resend
+  env: {
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
+    RESEND_FROM_NAME: process.env.RESEND_FROM_NAME,
+    RESEND_CC: process.env.RESEND_CC,
+    RESEND_BCC: process.env.RESEND_BCC,
+  },
+  // Optionally, you can also add ESLint ignore if needed
+  eslint: {
+    ignoreDuringBuilds: process.env.IGNORE_ESLINT === 'true',
+  },
 }
 
 const pwa = withPWA({

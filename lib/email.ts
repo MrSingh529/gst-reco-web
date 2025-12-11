@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer'
+import { Resend } from 'resend'
 
 export interface MismatchData {
   gstin: string
@@ -14,42 +14,14 @@ export interface MismatchData {
 }
 
 export async function sendMismatchEmail(
-    mismatchData: MismatchData,
-    senderEmail: string = process.env.EMAIL_FROM_ADDRESS || 'harpinder.singh@rvsolutions.in',
-    senderName: string = process.env.EMAIL_FROM_NAME || 'Harpinder Singh'
-  ): Promise<boolean> {
-    try {
-      // Debug logging
-      console.log('SMTP Configuration:', {
-        host: process.env.EMAIL_HOST,
-        port: process.env.EMAIL_PORT,
-        user: process.env.EMAIL_USER,
-        secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
-        from: senderEmail,
-        fromName: senderName,
-        cc: process.env.EMAIL_CC,
-        bcc: process.env.EMAIL_BCC
-      });
-  
-      const port = 587;
-      const secure = false;
-      
-      const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST || 'mail.rvsolutions.in',
-        port: port,
-        secure: secure,
-        auth: {
-          user: process.env.EMAIL_USER || 'harpinder.singh@rvsolutions.in',
-          pass: process.env.EMAIL_PASSWORD,
-        },
-        tls: {
-          rejectUnauthorized: false
-        },
-        connectionTimeout: 30000,
-        greetingTimeout: 30000,
-        socketTimeout: 30000
-      });
-
+  mismatchData: MismatchData
+): Promise<boolean> {
+  try {
+    console.log('Sending email via Resend to:', mismatchData.email)
+    
+    // Initialize Resend
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    
     // Format the mismatched invoices table
     const invoicesTable = mismatchData.mismatchedInvoices
       .map(inv => `
@@ -169,38 +141,31 @@ export async function sendMismatchEmail(
       accounts@rvsolutions.in
     `
 
-    const ccEmails = process.env.EMAIL_CC ? process.env.EMAIL_CC.split(',') : [];
-    const bccEmails = process.env.EMAIL_BCC ? process.env.EMAIL_BCC.split(',') : [];
+    // Split CC and BCC emails
+    const ccEmails = process.env.RESEND_CC?.split(',').filter(email => email.trim()) || []
+    const bccEmails = process.env.RESEND_BCC?.split(',').filter(email => email.trim()) || []
 
-    // Add default accounts email if not already in CC
-    if (!ccEmails.includes('accounts@rvsolutions.in')) {
-      ccEmails.push('accounts@rvsolutions.in');
+    const { data, error } = await resend.emails.send({
+      from: `${process.env.RESEND_FROM_NAME || 'Harpinder Singh'} <${process.env.RESEND_FROM_EMAIL || 'harpinder.singh@rvsolutions.in'}>`,
+      to: mismatchData.email,
+      cc: ccEmails,
+      bcc: bccEmails,
+      subject: `GST Reconciliation Discrepancy - ${mismatchData.tradeName} (${mismatchData.gstin})`,
+      text: textContent,
+      html: htmlContent,
+      reply_to: 'accounts@rvsolutions.in', // Replies go to accounts team
+    })
+
+    if (error) {
+      console.error(`Resend error for ${mismatchData.email}:`, error)
+      return false
     }
 
-    const mailOptions = {
-        from: `"${senderName}" <${senderEmail}>`,
-        to: mismatchData.email,
-        cc: ccEmails.join(','),
-        bcc: bccEmails.join(','),
-        subject: `GST Reconciliation Discrepancy - ${mismatchData.tradeName} (${mismatchData.gstin})`,
-        text: textContent,
-        html: htmlContent,
-        priority: 'high' as const
-      }
-
-    console.log('Sending email with:', {
-      to: mismatchData.email,
-      cc: mailOptions.cc,
-      bcc: mailOptions.bcc,
-      subject: mailOptions.subject
-    });
-
-    const info = await transporter.sendMail(mailOptions)
-    console.log(`✅ Email sent to ${mismatchData.email}: ${info.messageId}`)
+    console.log(`✅ Email sent to ${mismatchData.email} via Resend. ID:`, data?.id)
     return true
     
   } catch (error) {
-    console.error(`❌ Failed to send email to ${mismatchData.email}:`, error)
+    console.error(`Failed to send email to ${mismatchData.email}:`, error)
     return false
   }
 }

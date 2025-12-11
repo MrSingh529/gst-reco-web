@@ -1,13 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { 
-  normalize, groupByGSTINInv,
+  normalize, groupByGSTINInv, 
   identifyMismatchesForEmail, RawRow 
 } from '@/lib/reconcile'
 import { prepareMismatchEmails, sendMismatchEmail } from '@/lib/email'
 
 export async function POST(request: NextRequest) {
   try {
+    // Check if Resend API key is configured
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json(
+        { 
+          error: 'Resend API key not configured',
+          details: 'Please add RESEND_API_KEY to environment variables'
+        },
+        { status: 500 }
+      )
+    }
+
     const formData = await request.formData()
     const bookFile = formData.get('bookFile') as File
     const gstrFile = formData.get('gstrFile') as File
@@ -47,6 +58,8 @@ export async function POST(request: NextRequest) {
       eps
     )
     
+    console.log(`Found ${mismatches.length} vendors with mismatches`)
+    
     if (mismatches.length === 0) {
       return NextResponse.json({
         success: true,
@@ -63,7 +76,7 @@ export async function POST(request: NextRequest) {
     // Prepare email data
     const emailData = prepareMismatchEmails(mismatches)
     
-    // Send emails
+    // Send emails using Resend
     const results = await Promise.all(
       emailData.map(async (data) => {
         try {
@@ -102,7 +115,7 @@ export async function POST(request: NextRequest) {
       },
       recommendations: failed.length > 0 ? 
         `Some emails failed to send: ${failed.map(f => f.email).join(', ')}` :
-        'All emails sent successfully.',
+        'All emails sent successfully via Resend.',
       mismatchesCount: mismatches.length
     })
     
