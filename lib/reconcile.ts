@@ -5,6 +5,7 @@ export const EPS_DEFAULT = 10 // ₹10 tolerance
 const COLS = {
   gstin: 'GSTIN of Supplier',
   trade: 'Trade Name',
+  email: 'Email',
   date:  'Invoice Date',
   inv:   'Invoice Number',
   inv_val: 'Invoice Value',
@@ -12,19 +13,22 @@ const COLS = {
   cgst:  'Central Tax (CGST)',
   sgst:  'State Tax (SGST)',
   taxable: 'Taxable Value',
-} as const
-
-export type RawRow = Record<string, unknown>
+} as const;
 
 export interface CleanRow {
   GSTIN_clean: string
   INV_clean: string
   TRADE_clean: string
+  Email_clean: string
   inv_val: number
   igst: number
   cgst: number
   sgst: number
   taxable: number
+}
+
+function cleanEmail(s: unknown): string {
+  return asString(s).trim().toLowerCase()
 }
 
 function asString(v: unknown): string {
@@ -58,18 +62,26 @@ export function sheetToRows(ws: XLSX.WorkSheet): RawRow[] {
   return XLSX.utils.sheet_to_json(ws, { defval: '' }) as RawRow[]
 }
 
-export function normalize(rows: RawRow[]): { clean: CleanRow[]; tradeByGSTIN: Map<string,string> } {
+export function normalize(rows: RawRow[]): { 
+  clean: CleanRow[]; 
+  tradeByGSTIN: Map<string,string>;
+  emailByGSTIN: Map<string,string>;
+} {
   const clean: CleanRow[] = []
   const tradeCounts = new Map<string, Map<string, number>>()
+  const emailByGSTIN = new Map<string, string>()
 
   for (const r of rows) {
     const gstin = cleanGSTIN((r as Record<string, unknown>)[COLS.gstin])
     const inv   = cleanInv((r as Record<string, unknown>)[COLS.inv])
     const trade = cleanTrade((r as Record<string, unknown>)[COLS.trade])
+    const email = cleanEmail((r as Record<string, unknown>)[COLS.email])
+    
     const row: CleanRow = {
       GSTIN_clean: gstin,
       INV_clean: inv,
       TRADE_clean: trade,
+      Email_clean: email,
       inv_val: toNum((r as Record<string, unknown>)[COLS.inv_val]),
       igst: toNum((r as Record<string, unknown>)[COLS.igst]),
       cgst: toNum((r as Record<string, unknown>)[COLS.cgst]),
@@ -82,6 +94,11 @@ export function normalize(rows: RawRow[]): { clean: CleanRow[]; tradeByGSTIN: Ma
       if (!tradeCounts.has(gstin)) tradeCounts.set(gstin, new Map())
       const m = tradeCounts.get(gstin)!
       m.set(trade, (m.get(trade) || 0) + 1)
+      
+      // Store email for GSTIN
+      if (email && !emailByGSTIN.has(gstin)) {
+        emailByGSTIN.set(gstin, email)
+      }
     }
   }
 
@@ -97,7 +114,7 @@ export function normalize(rows: RawRow[]): { clean: CleanRow[]; tradeByGSTIN: Ma
     tradeByGSTIN.set(gstin, best)
   }
 
-  return { clean, tradeByGSTIN }
+  return { clean, tradeByGSTIN, emailByGSTIN } // Updated
 }
 
 export interface GroupedRow {
@@ -458,4 +475,93 @@ export function buildWorkbook(aoaByName: Record<string, (string | number)[][]>) 
     XLSX.utils.book_append_sheet(wb, ws, name)
   }
   return wb
+}
+
+// Add this function to reconcile.ts
+export function identifyMismatchesForEmail(
+  z: GroupedRow[],
+  g: GroupedRow[],
+  emailByGSTIN: Map<string, string>,
+  tradeByGSTIN: Map<string, string>,
+  eps: number
+): Array<{
+  gstin: string;
+  tradeName: string;
+  email: string;
+  mismatchedInvoices: Array<{
+    invoiceNumber: string;
+    bookValue: number;
+    gstrValue: number;
+    difference: number;
+  }>;
+}> {
+  const leftMap = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+  const rightMap = new Map(g.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+  
+  const mismatchesByGSTIN = new Map<
+    string, 
+    {
+      tradeName: string;
+      email: string;
+      mismatchedInvoices: Array<{
+        invoiceNumber: string;
+        bookValue: number;
+        gstrValue: number;
+        difference: number;
+      }>;
+    }
+  >();
+
+  // Collect all keys from both datasets
+  const allKeys = new Set([
+    ...Array.from(leftMap.keys()),
+    ...Array.from(rightMap.keys())
+  ]);
+
+  for (const key of allKeys) {
+    const [gstin, invoiceNumber] = key.split('|');
+    const left = leftMap.get(key);
+    const right = rightMap.get(key);
+    
+    // Skip if both sides match within tolerance
+    if (left && right) {
+      const taxableDiff = left.taxable - right.taxable;
+      if (Math.abs(taxableDiff) <= eps) continue;
+    }
+    
+    // Get email and trade name
+    const email = emailByGSTIN.get(gstin) || '';
+    const tradeName = tradeByGSTIN.get(gstin) || 'Unknown';
+    
+    if (!email) {
+      console.warn(`No email found for GSTIN: ${gstin}`);
+      continue;
+    }
+    
+    if (!mismatchesByGSTIN.has(gstin)) {
+      mismatchesByGSTIN.set(gstin, {
+        tradeName,
+        email,
+        mismatchedInvoices: []
+      });
+    }
+    
+    const mismatch = mismatchesByGSTIN.get(gstin)!;
+    mismatch.mismatchedInvoices.push({
+      invoiceNumber,
+      bookValue: left?.taxable || 0,
+      gstrValue: right?.taxable || 0,
+      difference: (left?.taxable || 0) - (right?.taxable || 0)
+    });
+  }
+
+  // Convert to array and filter out GSTINs with no mismatches
+  return Array.from(mismatchesByGSTIN.entries())
+    .filter(([_, data]) => data.mismatchedInvoices.length > 0)
+    .map(([gstin, data]) => ({
+      gstin,
+      tradeName: data.tradeName,
+      email: data.email,
+      mismatchedInvoices: data.mismatchedInvoices
+    }));
 }
