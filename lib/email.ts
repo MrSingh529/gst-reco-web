@@ -180,12 +180,12 @@ export async function sendMismatchEmail(
     const mailOptions = {
         from: `"${senderName}" <${senderEmail}>`,
         to: mismatchData.email,
-        cc: ccEmails.join(','), // Use the ccEmails variable
-        bcc: bccEmails.join(','), // Use the bccEmails variable
+        cc: ccEmails.join(','),
+        bcc: bccEmails.join(','),
         subject: `GST Reconciliation Discrepancy - ${mismatchData.tradeName} (${mismatchData.gstin})`,
         text: textContent,
         html: htmlContent,
-        priority: 'high'
+        priority: 'high' as const
       }
 
     console.log('Sending email with:', {
