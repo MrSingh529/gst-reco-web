@@ -1,26 +1,40 @@
-import { Resend } from 'resend'
+import nodemailer from 'nodemailer';
 
 export interface MismatchData {
-  gstin: string
-  tradeName: string
-  email: string
+  gstin: string;
+  tradeName: string;
+  email: string;
   mismatchedInvoices: Array<{
-    invoiceNumber: string
-    bookValue: number
-    gstrValue: number
-    difference: number
-  }>
-  totalDifference: number
+    invoiceNumber: string;
+    bookValue: number;
+    gstrValue: number;
+    difference: number;
+  }>;
+  totalDifference: number;
 }
 
 export async function sendMismatchEmail(
   mismatchData: MismatchData
 ): Promise<boolean> {
   try {
-    console.log('Sending email via Resend to:', mismatchData.email)
-    
-    // Initialize Resend
-    const resend = new Resend(process.env.RESEND_API_KEY!)
+    console.log('Sending email via Resend SMTP to:', mismatchData.email);
+
+    // Use Resend's SMTP configuration
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.resend.com',
+      port: 465,
+      secure: true,
+      auth: {
+        user: 'resend', // Always 'resend' for SMTP
+        pass: process.env.RESEND_API_KEY, // Your Resend API key
+      },
+      tls: {
+        rejectUnauthorized: false,
+      },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
+    });
     
     // Format the mismatched invoices table
     const invoicesTable = mismatchData.mismatchedInvoices
@@ -34,7 +48,7 @@ export async function sendMismatchEmail(
           </td>
         </tr>
       `)
-      .join('')
+      .join('');
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -115,7 +129,7 @@ export async function sendMismatchEmail(
         </div>
       </body>
       </html>
-    `
+    `;
 
     const textContent = `
       GST Reconciliation Mismatch Notice
@@ -139,34 +153,39 @@ export async function sendMismatchEmail(
       Accounts Department
       RV Solutions Private Limited
       accounts@rvsolutions.in
-    `
+    `;
 
     // Split CC and BCC emails
-    const ccEmails = process.env.RESEND_CC?.split(',').filter(email => email.trim()) || []
-    const bccEmails = process.env.RESEND_BCC?.split(',').filter(email => email.trim()) || []
+    const ccEmails = process.env.RESEND_CC?.split(',').filter(email => email.trim()) || [];
+    const bccEmails = process.env.RESEND_BCC?.split(',').filter(email => email.trim()) || [];
 
-    const { data, error } = await resend.emails.send({
-      from: `${process.env.RESEND_FROM_NAME || 'Harpinder Singh'} <${process.env.RESEND_FROM_EMAIL || 'harpinder.singh@rvsolutions.in'}>`,
+    // IMPORTANT: Use a verified domain for 'from' address
+    // You can use any email that works with Resend's default verified domains
+    const mailOptions = {
+      from: '"RV Solutions Accounts" <onboarding@resend.dev>',
       to: mismatchData.email,
       cc: ccEmails,
       bcc: bccEmails,
       subject: `GST Reconciliation Discrepancy - ${mismatchData.tradeName} (${mismatchData.gstin})`,
       text: textContent,
       html: htmlContent,
-      replyTo: 'accounts@rvsolutions.in', // Fixed: changed from reply_to to replyTo
-    })
+      replyTo: 'accounts@rvsolutions.in',
+    };
 
-    if (error) {
-      console.error(`Resend error for ${mismatchData.email}:`, error)
-      return false
-    }
+    console.log('Sending email with SMTP:', {
+      from: mailOptions.from,
+      to: mailOptions.to,
+      cc: mailOptions.cc,
+      subject: mailOptions.subject,
+    });
 
-    console.log(`✅ Email sent to ${mismatchData.email} via Resend. ID:`, data?.id)
-    return true
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Email sent to ${mismatchData.email} via Resend SMTP. ID:`, info.messageId);
+    return true;
     
   } catch (error) {
-    console.error(`Failed to send email to ${mismatchData.email}:`, error)
-    return false
+    console.error(`Failed to send email to ${mismatchData.email}:`, error);
+    return false;
   }
 }
 
@@ -185,6 +204,6 @@ export function prepareMismatchEmails(
 ): MismatchData[] {
   return mismatchedResults.map(result => ({
     ...result,
-    totalDifference: result.mismatchedInvoices.reduce((sum, inv) => sum + inv.difference, 0)
-  }))
+    totalDifference: result.mismatchedInvoices.reduce((sum, inv) => sum + inv.difference, 0),
+  }));
 }
