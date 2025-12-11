@@ -520,7 +520,7 @@ export function identifyMismatchesForEmail(
     ...Array.from(rightMap.keys())
   ]);
 
-  for (const key of allKeys) {
+  for (const key of Array.from(allKeys)) {
     const [gstin, invoiceNumber] = key.split('|');
     const left = leftMap.get(key);
     const right = rightMap.get(key);
