@@ -76,31 +76,40 @@ export async function POST(request: NextRequest) {
     // Prepare email data
     const emailData = prepareMismatchEmails(mismatches)
     
-    // Send emails using Resend
-    const results = await Promise.all(
-      emailData.map(async (data) => {
-        try {
-          const success = await sendMismatchEmail(data)
-          return {
-            gstin: data.gstin,
-            tradeName: data.tradeName,
-            email: data.email,
-            success,
-            invoicesCount: data.mismatchedInvoices.length
-          }
-        } catch (error) {
-          console.error(`Failed to send email to ${data.email}:`, error)
-          return {
-            gstin: data.gstin,
-            tradeName: data.tradeName,
-            email: data.email,
-            success: false,
-            invoicesCount: data.mismatchedInvoices.length,
-            error: error instanceof Error ? error.message : 'Unknown error'
-          }
+    // Send emails using Resend - FIXED: Sequential sending with delay
+    const results = [];
+    for (let i = 0; i < emailData.length; i++) {
+      const data = emailData[i];
+      try {
+        console.log(`Sending email ${i + 1} of ${emailData.length} to ${data.email}`);
+        
+        const success = await sendMismatchEmail(data);
+        results.push({
+          gstin: data.gstin,
+          tradeName: data.tradeName,
+          email: data.email,
+          success,
+          invoicesCount: data.mismatchedInvoices.length
+        });
+        
+        // Add delay between emails (1 second to stay under 2 requests/second limit)
+        // Only add delay if not the last email
+        if (i < emailData.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
         }
-      })
-    )
+        
+      } catch (error) {
+        console.error(`Failed to send email to ${data.email}:`, error);
+        results.push({
+          gstin: data.gstin,
+          tradeName: data.tradeName,
+          email: data.email,
+          success: false,
+          invoicesCount: data.mismatchedInvoices.length,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
     
     const successful = results.filter(r => r.success)
     const failed = results.filter(r => !r.success)
