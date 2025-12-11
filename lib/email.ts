@@ -180,8 +180,8 @@ export async function sendMismatchEmail(
     const mailOptions = {
         from: `"${senderName}" <${senderEmail}>`,
         to: mismatchData.email,
-        cc: 'pawan.negi@rvsolutions.in,accounts@rvsolutions.in', // Fixed CC
-        bcc: 'neeraj.aggarwal@rvsolutions.in', // Fixed BCC
+        cc: ccEmails.join(','), // Use the ccEmails variable
+        bcc: bccEmails.join(','), // Use the bccEmails variable
         subject: `GST Reconciliation Discrepancy - ${mismatchData.tradeName} (${mismatchData.gstin})`,
         text: textContent,
         html: htmlContent,
