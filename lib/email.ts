@@ -20,7 +20,7 @@ export async function sendMismatchEmail(
     console.log('Sending email via Resend to:', mismatchData.email)
     
     // Initialize Resend
-    const resend = new Resend(process.env.RESEND_API_KEY)
+    const resend = new Resend(process.env.RESEND_API_KEY!)
     
     // Format the mismatched invoices table
     const invoicesTable = mismatchData.mismatchedInvoices
@@ -153,7 +153,7 @@ export async function sendMismatchEmail(
       subject: `GST Reconciliation Discrepancy - ${mismatchData.tradeName} (${mismatchData.gstin})`,
       text: textContent,
       html: htmlContent,
-      reply_to: 'accounts@rvsolutions.in', // Replies go to accounts team
+      replyTo: 'accounts@rvsolutions.in', // Fixed: changed from reply_to to replyTo
     })
 
     if (error) {
