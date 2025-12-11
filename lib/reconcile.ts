@@ -15,6 +15,8 @@ const COLS = {
   taxable: 'Taxable Value',
 } as const;
 
+export type RawRow = Record<string, unknown>
+
 export interface CleanRow {
   GSTIN_clean: string
   INV_clean: string
