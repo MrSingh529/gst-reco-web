@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { 
-  sheetToRows, normalize, groupByGSTINInv, 
+  normalize, groupByGSTINInv,
   identifyMismatchesForEmail, RawRow 
 } from '@/lib/reconcile'
 import { prepareMismatchEmails, sendMismatchEmail } from '@/lib/email'

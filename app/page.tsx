@@ -7,8 +7,44 @@ import {
   buildZohoVsGSTR, buildGSTRVsZoho, buildSumFunction,
   buildBillsWise, buildGSTINWise, buildTradeWise,
   buildWorkbook, EPS_DEFAULT, buildMatchedTaxableByGSTIN,
-  buildInvoiceWise, identifyMismatchesForEmail,
+  buildInvoiceWise,
 } from '@/lib/reconcile'
+
+// Define interfaces for reconciliation data
+interface ReconciliationData {
+  zohoGrp: Array<{
+    GSTIN_clean: string;
+    INV_clean: string;
+    inv_val: number;
+    igst: number;
+    cgst: number;
+    sgst: number;
+    taxable: number;
+  }>;
+  g2bGrp: Array<{
+    GSTIN_clean: string;
+    INV_clean: string;
+    inv_val: number;
+    igst: number;
+    cgst: number;
+    sgst: number;
+    taxable: number;
+  }>;
+  tradeByGSTIN: Map<string, string>;
+  emailByGSTIN: Map<string, string>;
+  bookFile: File;
+  gstrFile: File;
+}
+
+// Define interface for email results
+interface EmailResult {
+  gstin: string;
+  tradeName: string;
+  email: string;
+  success: boolean;
+  invoicesCount: number;
+  error?: string;
+}
 
 export default function Page() {
   const [eps, setEps] = useState<number>(EPS_DEFAULT)
@@ -16,18 +52,9 @@ export default function Page() {
   const [log, setLog] = useState<string>('')
   const [busy, setBusy] = useState(false)
   const [emailBusy, setEmailBusy] = useState(false)
-  const [reconciliationData, setReconciliationData] = useState<{
-    zohoGrp: any[],
-    g2bGrp: any[],
-    tradeByGSTIN: Map<string, string>,
-    emailByGSTIN: Map<string, string>,
-    bookFile: File,
-    gstrFile: File
-  } | null>(null)
+  const [reconciliationData, setReconciliationData] = useState<ReconciliationData | null>(null) // Fixed type
   
   const inputRef = useRef<HTMLInputElement>(null)
-  const bookFileRef = useRef<HTMLInputElement>(null)
-  const gstrFileRef = useRef<HTMLInputElement>(null)
 
   async function handleFile(file: File) {
     setFileName(file.name)
@@ -45,7 +72,7 @@ export default function Page() {
       const zRows = sheetToRows(wsZ)
 
       const { clean: g2bClean, tradeByGSTIN: t1 } = normalize(gRows)
-      const { clean: zohoClean, tradeByGSTIN: t2, emailByGSTIN } = normalize(zRows) // Added emailByGSTIN
+      const { clean: zohoClean, tradeByGSTIN: t2, emailByGSTIN } = normalize(zRows)
 
       const tradeByGSTIN = new Map<string, string>(t1)
       for (const [k, v] of Array.from(t2.entries())) if (v) tradeByGSTIN.set(k, v)
@@ -73,7 +100,7 @@ export default function Page() {
         g2bGrp,
         tradeByGSTIN,
         emailByGSTIN,
-        bookFile: file, // Store the original file
+        bookFile: file,
         gstrFile: file
       })
       
@@ -129,12 +156,16 @@ export default function Page() {
       const result = await response.json()
       
       if (result.success) {
-        setLog(`✅ Emails sent successfully! ${result.summary.emailsSent} out of ${result.summary.totalClients} vendors notified.`)
+        const successfulCount = result.summary.emailsSent
+        const totalCount = result.summary.totalClients
+        
+        setLog(`✅ Emails sent successfully! ${successfulCount} out of ${totalCount} vendors notified.`)
         
         // Show detailed results
-        const failed = result.summary.details.filter((d: any) => !d.success)
+        const failed = result.summary.details.filter((d: EmailResult) => !d.success)
         if (failed.length > 0) {
-          setLog(prev => prev + ` Failed: ${failed.map((f: any) => f.tradeName).join(', ')}`)
+          const failedNames = failed.map((f: EmailResult) => f.tradeName).join(', ')
+          setLog(prev => prev + ` Failed: ${failedNames}`)
         }
       } else {
         setLog(`❌ Email sending failed: ${result.error || 'Unknown error'}`)
@@ -177,7 +208,7 @@ export default function Page() {
                 type="number"
                 className="input w-40"
                 value={eps}
-                onChange={(e)=> setEps(Number(e.target.value))}
+                onChange={(e) => setEps(Number(e.target.value))}
                 step={0.5}
                 min={0}
               />
@@ -196,15 +227,15 @@ export default function Page() {
               />
               <label
                 htmlFor="file-input"
-                onDragOver={(e)=> e.preventDefault()}
+                onDragOver={(e) => e.preventDefault()}
                 onDrop={onDrop}
                 className="block cursor-pointer rounded-2xl border border-dashed bg-slate-50 hover:bg-slate-100 transition p-6 text-center"
               >
                 <div className="mx-auto mb-2 h-10 w-10 rounded-full bg-white shadow grid place-items-center">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="h-5 w-5 text-slate-700"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2.5M7 12l5-5m0 0l5 5m-5-5V21"/></svg>
                 </div>
-                <div className="font-medium">Drag & drop or click to upload</div>
-                <div className="small mt-1">Required sheets in One Excel: "GSTR-2B" & "Zoho Data"</div>
+                <div className="font-medium">Drag &amp; drop or click to upload</div>
+                <div className="small mt-1">Required sheets in One Excel: &quot;GSTR-2B&quot; &amp; &quot;Zoho Data&quot;</div>
               </label>
             </div>
 
@@ -214,7 +245,7 @@ export default function Page() {
 
             <button
               className="btn btn-primary w-full disabled:opacity-60"
-              onClick={()=> inputRef.current?.click()}
+              onClick={() => inputRef.current?.click()}
               disabled={busy}
             >
               {busy ? (
@@ -247,7 +278,7 @@ export default function Page() {
                 </button>
                 <p className="small mt-2">
                   Send automated emails to vendors with GST mismatches. 
-                  Ensure "Email" column exists in Zoho Data sheet.
+                  Ensure &quot;Email&quot; column exists in Zoho Data sheet.
                 </p>
               </div>
             )}
@@ -268,8 +299,8 @@ export default function Page() {
               <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
                 <h3 className="font-medium text-blue-800 mb-2">Ready to Send Emails</h3>
                 <p className="text-sm text-blue-700">
-                  Click the "Send Mismatch Emails" button to notify vendors with reconciliation discrepancies.
-                  Emails will be sent from <strong>noreply@mail.rvsolutions.in</strong>
+                  Click the &quot;Send Mismatch Emails&quot; button to notify vendors with reconciliation discrepancies.
+                  Emails will be sent from <strong>harpinder.singh@rvsolutions.in</strong>
                 </p>
               </div>
             )}
@@ -280,22 +311,6 @@ export default function Page() {
           </div>
         </section>
       </div>
-
-      {/* Hidden file inputs for API */}
-      <input
-        ref={bookFileRef}
-        type="file"
-        accept=".xlsx,.xls"
-        className="hidden"
-        id="book-file"
-      />
-      <input
-        ref={gstrFileRef}
-        type="file"
-        accept=".xlsx,.xls"
-        className="hidden"
-        id="gstr-file"
-      />
     </main>
   )
 }
