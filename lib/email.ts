@@ -31,8 +31,8 @@ export async function sendMismatchEmail(
         bcc: process.env.EMAIL_BCC
       });
   
-      const port = parseInt(process.env.EMAIL_PORT || '587');
-      const secure = port === 465;
+      const port = 587;
+      const secure = false;
       
       const transporter = nodemailer.createTransport({
         host: process.env.EMAIL_HOST || 'mail.rvsolutions.in',
@@ -45,9 +45,9 @@ export async function sendMismatchEmail(
         tls: {
           rejectUnauthorized: false
         },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000
+        connectionTimeout: 30000,
+        greetingTimeout: 30000,
+        socketTimeout: 30000
       });
 
     // Format the mismatched invoices table
