@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { identifyMismatchesForEmail, normalize, groupByGSTINInv } from '@/lib/reconcile'
+import * as XLSX from 'xlsx'
+import { 
+  sheetToRows, normalize, groupByGSTINInv, 
+  identifyMismatchesForEmail, RawRow 
+} from '@/lib/reconcile'
 import { prepareMismatchEmails, sendMismatchEmail } from '@/lib/email'
 
 export async function POST(request: NextRequest) {
@@ -16,9 +20,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Parse files (you'll need to implement file parsing)
-    const bookData = await parseExcelFile(bookFile)
-    const gstrData = await parseExcelFile(gstrFile)
+    // Parse files
+    const bookData = await parseExcelFile(bookFile, 'Zoho Data')
+    const gstrData = await parseExcelFile(gstrFile, 'GSTR-2B')
+    
+    if (!bookData.length || !gstrData.length) {
+      return NextResponse.json(
+        { error: 'Could not parse data from files. Ensure sheets exist.' },
+        { status: 400 }
+      )
+    }
     
     // Normalize and process data
     const { clean: bookClean, tradeByGSTIN, emailByGSTIN } = normalize(bookData)
@@ -36,19 +47,44 @@ export async function POST(request: NextRequest) {
       eps
     )
     
+    if (mismatches.length === 0) {
+      return NextResponse.json({
+        success: true,
+        summary: {
+          totalClients: 0,
+          emailsSent: 0,
+          emailsFailed: 0,
+          details: []
+        },
+        message: 'No mismatches found. All invoices match within tolerance.'
+      })
+    }
+    
     // Prepare email data
     const emailData = prepareMismatchEmails(mismatches)
     
     // Send emails
     const results = await Promise.all(
       emailData.map(async (data) => {
-        const success = await sendMismatchEmail(data)
-        return {
-          gstin: data.gstin,
-          tradeName: data.tradeName,
-          email: data.email,
-          success,
-          invoicesCount: data.mismatchedInvoices.length
+        try {
+          const success = await sendMismatchEmail(data)
+          return {
+            gstin: data.gstin,
+            tradeName: data.tradeName,
+            email: data.email,
+            success,
+            invoicesCount: data.mismatchedInvoices.length
+          }
+        } catch (error) {
+          console.error(`Failed to send email to ${data.email}:`, error)
+          return {
+            gstin: data.gstin,
+            tradeName: data.tradeName,
+            email: data.email,
+            success: false,
+            invoicesCount: data.mismatchedInvoices.length,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
         }
       })
     )
@@ -65,25 +101,37 @@ export async function POST(request: NextRequest) {
         details: results
       },
       recommendations: failed.length > 0 ? 
-        `Some emails failed to send. Please check: ${failed.map(f => f.email).join(', ')}` :
-        'All emails sent successfully.'
+        `Some emails failed to send: ${failed.map(f => f.email).join(', ')}` :
+        'All emails sent successfully.',
+      mismatchesCount: mismatches.length
     })
     
   } catch (error) {
     console.error('Error processing GST emails:', error)
     return NextResponse.json(
-      { error: 'Failed to process GST reconciliation emails' },
+      { 
+        error: 'Failed to process GST reconciliation emails',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }
 }
 
-// Helper function to parse Excel files
-async function parseExcelFile(file: File): Promise<any[]> {
+// Helper function to parse Excel files with specific sheet
+async function parseExcelFile(file: File, sheetName: string): Promise<RawRow[]> {
   const buffer = await file.arrayBuffer()
-  const XLSX = await import('xlsx')
   const workbook = XLSX.read(buffer, { type: 'buffer' })
-  const sheetName = workbook.SheetNames[0]
-  const worksheet = workbook.Sheets[sheetName]
-  return XLSX.utils.sheet_to_json(worksheet)
+  
+  // Try to find the sheet (case-insensitive)
+  const sheet = workbook.Sheets[sheetName] || 
+                workbook.Sheets[sheetName.toLowerCase()] ||
+                workbook.Sheets[sheetName.toUpperCase()]
+  
+  if (!sheet) {
+    throw new Error(`Sheet "${sheetName}" not found in ${file.name}`)
+  }
+  
+  const data = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+  return data as RawRow[]
 }

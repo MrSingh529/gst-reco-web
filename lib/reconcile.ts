@@ -557,7 +557,7 @@ export function identifyMismatchesForEmail(
 
   // Convert to array and filter out GSTINs with no mismatches
   return Array.from(mismatchesByGSTIN.entries())
-    .filter(([_, data]) => data.mismatchedInvoices.length > 0)
+    .filter(([, data]) => data.mismatchedInvoices.length > 0) // Fixed: removed unused parameter
     .map(([gstin, data]) => ({
       gstin,
       tradeName: data.tradeName,

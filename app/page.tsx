@@ -7,7 +7,7 @@ import {
   buildZohoVsGSTR, buildGSTRVsZoho, buildSumFunction,
   buildBillsWise, buildGSTINWise, buildTradeWise,
   buildWorkbook, EPS_DEFAULT, buildMatchedTaxableByGSTIN,
-  buildInvoiceWise,
+  buildInvoiceWise, identifyMismatchesForEmail,
 } from '@/lib/reconcile'
 
 export default function Page() {
@@ -15,7 +15,19 @@ export default function Page() {
   const [fileName, setFileName] = useState<string>('')
   const [log, setLog] = useState<string>('')
   const [busy, setBusy] = useState(false)
+  const [emailBusy, setEmailBusy] = useState(false)
+  const [reconciliationData, setReconciliationData] = useState<{
+    zohoGrp: any[],
+    g2bGrp: any[],
+    tradeByGSTIN: Map<string, string>,
+    emailByGSTIN: Map<string, string>,
+    bookFile: File,
+    gstrFile: File
+  } | null>(null)
+  
   const inputRef = useRef<HTMLInputElement>(null)
+  const bookFileRef = useRef<HTMLInputElement>(null)
+  const gstrFileRef = useRef<HTMLInputElement>(null)
 
   async function handleFile(file: File) {
     setFileName(file.name)
@@ -33,7 +45,7 @@ export default function Page() {
       const zRows = sheetToRows(wsZ)
 
       const { clean: g2bClean, tradeByGSTIN: t1 } = normalize(gRows)
-      const { clean: zohoClean, tradeByGSTIN: t2 } = normalize(zRows)
+      const { clean: zohoClean, tradeByGSTIN: t2, emailByGSTIN } = normalize(zRows) // Added emailByGSTIN
 
       const tradeByGSTIN = new Map<string, string>(t1)
       for (const [k, v] of Array.from(t2.entries())) if (v) tradeByGSTIN.set(k, v)
@@ -54,6 +66,17 @@ export default function Page() {
 
       const wbOut = buildWorkbook(aoa)
       XLSX.writeFile(wbOut, 'reconciliation_output.xlsx')
+      
+      // Store data for email sending
+      setReconciliationData({
+        zohoGrp,
+        g2bGrp,
+        tradeByGSTIN,
+        emailByGSTIN,
+        bookFile: file, // Store the original file
+        gstrFile: file
+      })
+      
       setLog('✅ Reconciliation complete. File downloaded: reconciliation_output.xlsx')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -61,6 +84,67 @@ export default function Page() {
       setLog('❌ Error: ' + msg)
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleSendEmails() {
+    if (!reconciliationData) {
+      setLog('❌ Please run reconciliation first')
+      return
+    }
+
+    setEmailBusy(true)
+    setLog('Sending emails to vendors with mismatches...')
+
+    try {
+      const formData = new FormData()
+      
+      // Create two separate files for API
+      const bookFile = new File(
+        [await reconciliationData.bookFile.arrayBuffer()], 
+        'book_data.xlsx', 
+        { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+      )
+      
+      const gstrFile = new File(
+        [await reconciliationData.gstrFile.arrayBuffer()], 
+        'gstr_data.xlsx', 
+        { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+      )
+      
+      formData.append('bookFile', bookFile)
+      formData.append('gstrFile', gstrFile)
+      formData.append('eps', eps.toString())
+
+      const response = await fetch('/api/send-gst-emails', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Failed to send emails: ${response.status} - ${errorText}`)
+      }
+
+      const result = await response.json()
+      
+      if (result.success) {
+        setLog(`✅ Emails sent successfully! ${result.summary.emailsSent} out of ${result.summary.totalClients} vendors notified.`)
+        
+        // Show detailed results
+        const failed = result.summary.details.filter((d: any) => !d.success)
+        if (failed.length > 0) {
+          setLog(prev => prev + ` Failed: ${failed.map((f: any) => f.tradeName).join(', ')}`)
+        }
+      } else {
+        setLog(`❌ Email sending failed: ${result.error || 'Unknown error'}`)
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(err)
+      setLog('❌ Error sending emails: ' + msg)
+    } finally {
+      setEmailBusy(false)
     }
   }
 
@@ -117,10 +201,10 @@ export default function Page() {
                 className="block cursor-pointer rounded-2xl border border-dashed bg-slate-50 hover:bg-slate-100 transition p-6 text-center"
               >
                 <div className="mx-auto mb-2 h-10 w-10 rounded-full bg-white shadow grid place-items-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="h-5 w-5 text-slate-700"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2.5M7 12l5-5m0 0 5 5m-5-5V21"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="h-5 w-5 text-slate-700"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2.5M7 12l5-5m0 0l5 5m-5-5V21"/></svg>
                 </div>
                 <div className="font-medium">Drag & drop or click to upload</div>
-                <div className="small mt-1">Required sheets in One Excel: “GSTR-2B” & “Zoho Data”</div>
+                <div className="small mt-1">Required sheets in One Excel: "GSTR-2B" & "Zoho Data"</div>
               </label>
             </div>
 
@@ -142,6 +226,31 @@ export default function Page() {
                 'Choose File'
               )}
             </button>
+
+            {/* Email Sending Section - Only show after reconciliation */}
+            {reconciliationData && (
+              <div className="pt-4 border-t">
+                <h3 className="label mb-3">Email Notifications</h3>
+                <button
+                  onClick={handleSendEmails}
+                  disabled={emailBusy || !reconciliationData}
+                  className="btn w-full bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"
+                >
+                  {emailBusy ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"></span>
+                      Sending Emails…
+                    </span>
+                  ) : (
+                    '📧 Send Mismatch Emails to Vendors'
+                  )}
+                </button>
+                <p className="small mt-2">
+                  Send automated emails to vendors with GST mismatches. 
+                  Ensure "Email" column exists in Zoho Data sheet.
+                </p>
+              </div>
+            )}
           </div>
         </section>
 
@@ -149,9 +258,21 @@ export default function Page() {
         <section className="card md:col-span-2">
           <div className="card-pad">
             <h2 className="text-lg font-semibold">Run Log</h2>
-            <div className={`mt-3 min-h-[84px] rounded-xl border bg-slate-50 px-4 py-3 text-sm ${log.startsWith('✅') ? 'border-emerald-300 text-emerald-800' : log.startsWith('❌') ? 'border-rose-300 text-rose-800' : 'border-slate-200 text-slate-700'}`}>
-              {busy ? 'Processing…' : (log || 'No run yet.')}
+            <div className={`mt-3 min-h-[84px] rounded-xl border bg-slate-50 px-4 py-3 text-sm ${log.startsWith('✅') ? 'border-emerald-300 text-emerald-800' : log.startsWith('❌') ? 'border-rose-300 text-rose-800' : log.includes('Sending') ? 'border-blue-300 text-blue-800' : 'border-slate-200 text-slate-700'}`}>
+              {busy ? 'Processing reconciliation...' : 
+               emailBusy ? 'Sending emails to vendors...' : 
+               (log || 'No run yet. Upload an Excel file to begin.')}
             </div>
+
+            {reconciliationData && (
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                <h3 className="font-medium text-blue-800 mb-2">Ready to Send Emails</h3>
+                <p className="text-sm text-blue-700">
+                  Click the "Send Mismatch Emails" button to notify vendors with reconciliation discrepancies.
+                  Emails will be sent from <strong>noreply@mail.rvsolutions.in</strong>
+                </p>
+              </div>
+            )}
 
             <div className="mt-6 small text-slate-500">
               Invoice matching is exact on (GSTIN, Invoice Number) after normalization. The ₹ tolerance only affects differences (treated as 0 when within ± tolerance).
@@ -159,6 +280,22 @@ export default function Page() {
           </div>
         </section>
       </div>
+
+      {/* Hidden file inputs for API */}
+      <input
+        ref={bookFileRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        id="book-file"
+      />
+      <input
+        ref={gstrFileRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        id="gstr-file"
+      />
     </main>
   )
 }

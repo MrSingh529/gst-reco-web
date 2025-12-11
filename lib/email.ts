@@ -14,24 +14,41 @@ export interface MismatchData {
 }
 
 export async function sendMismatchEmail(
-  mismatchData: MismatchData,
-  senderEmail: string = 'noreply@mail.rvsolutions.in',
-  senderName: string = 'RV Solutions Accounts'
-): Promise<boolean> {
-  try {
-    // Create transporter for mail.rvsolutions.in
-    const transporter = nodemailer.createTransport({
-      host: 'mail.rvsolutions.in',
-      port: 587, // Typically 587 for TLS, 465 for SSL
-      secure: false, // true for 465, false for other ports
-      auth: {
-        user: senderEmail,
-        pass: process.env.EMAIL_PASSWORD, // You'll need to set this in .env
-      },
-      tls: {
-        rejectUnauthorized: false // May be needed for some setups
-      }
-    })
+    mismatchData: MismatchData,
+    senderEmail: string = process.env.EMAIL_FROM_ADDRESS || 'harpinder.singh@rvsolutions.in',
+    senderName: string = process.env.EMAIL_FROM_NAME || 'Harpinder Singh'
+  ): Promise<boolean> {
+    try {
+      // Debug logging
+      console.log('SMTP Configuration:', {
+        host: process.env.EMAIL_HOST,
+        port: process.env.EMAIL_PORT,
+        user: process.env.EMAIL_USER,
+        secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
+        from: senderEmail,
+        fromName: senderName,
+        cc: process.env.EMAIL_CC,
+        bcc: process.env.EMAIL_BCC
+      });
+  
+      const port = parseInt(process.env.EMAIL_PORT || '587');
+      const secure = port === 465;
+      
+      const transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST || 'mail.rvsolutions.in',
+        port: port,
+        secure: secure,
+        auth: {
+          user: process.env.EMAIL_USER || 'harpinder.singh@rvsolutions.in',
+          pass: process.env.EMAIL_PASSWORD,
+        },
+        tls: {
+          rejectUnauthorized: false
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
+      });
 
     // Format the mismatched invoices table
     const invoicesTable = mismatchData.mismatchedInvoices
@@ -152,23 +169,38 @@ export async function sendMismatchEmail(
       accounts@rvsolutions.in
     `
 
+    const ccEmails = process.env.EMAIL_CC ? process.env.EMAIL_CC.split(',') : [];
+    const bccEmails = process.env.EMAIL_BCC ? process.env.EMAIL_BCC.split(',') : [];
+
+    // Add default accounts email if not already in CC
+    if (!ccEmails.includes('accounts@rvsolutions.in')) {
+      ccEmails.push('accounts@rvsolutions.in');
+    }
+
     const mailOptions = {
       from: `"${senderName}" <${senderEmail}>`,
       to: mismatchData.email,
-      cc: 'accounts@rvsolutions.in', // CC to your accounts team
-      bcc: 'archive@rvsolutions.in', // BCC for record keeping
+      cc: ccEmails.filter(Boolean).join(','), // Remove empty strings
+      bcc: bccEmails.filter(Boolean).join(','), // Remove empty strings
       subject: `GST Reconciliation Discrepancy - ${mismatchData.tradeName} (${mismatchData.gstin})`,
       text: textContent,
       html: htmlContent,
       priority: 'high'
     }
 
+    console.log('Sending email with:', {
+      to: mismatchData.email,
+      cc: mailOptions.cc,
+      bcc: mailOptions.bcc,
+      subject: mailOptions.subject
+    });
+
     const info = await transporter.sendMail(mailOptions)
-    console.log(`Email sent to ${mismatchData.email}: ${info.messageId}`)
+    console.log(`✅ Email sent to ${mismatchData.email}: ${info.messageId}`)
     return true
     
   } catch (error) {
-    console.error(`Failed to send email to ${mismatchData.email}:`, error)
+    console.error(`❌ Failed to send email to ${mismatchData.email}:`, error)
     return false
   }
 }
