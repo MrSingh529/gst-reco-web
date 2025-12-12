@@ -34,94 +34,98 @@ export async function sendMismatchEmail(
       rateLimit: 15, // ~15 emails per minute (Gmail limit is 20)
     });
 
-    // Format the mismatched invoices table
+    // Format the mismatched invoices table with the new columns
     const invoicesTable = mismatchData.mismatchedInvoices
-      .map(inv => `
+      .map(inv => {
+        // Calculate invoice amount and GST amount
+        const invoiceAmount = inv.bookValue;
+        const gstAmount = inv.gstrValue - inv.bookValue;
+        
+        // Format dates (you might need to get invoice date from your data)
+        const invoiceDate = new Date().toLocaleDateString('en-IN'); // Default to today, update with actual data
+        
+        return `
         <tr>
+          <td style="padding: 8px; border: 1px solid #ddd;">09AADCR9806P1ZL</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">RV Solutions Private Limited</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${mismatchData.tradeName}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${mismatchData.gstin}</td>
           <td style="padding: 8px; border: 1px solid #ddd;">${inv.invoiceNumber}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">₹${inv.bookValue.toLocaleString('en-IN')}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">₹${inv.gstrValue.toLocaleString('en-IN')}</td>
-          <td style="padding: 8px; border: 1px solid #ddd; color: ${inv.difference > 0 ? '#d63031' : '#00b894'}">
-            ₹${Math.abs(inv.difference).toLocaleString('en-IN')} ${inv.difference > 0 ? '(Excess)' : '(Short)'}
-          </td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${invoiceDate}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">₹${invoiceAmount.toLocaleString('en-IN')}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">₹${Math.abs(gstAmount).toLocaleString('en-IN')}</td>
         </tr>
-      `)
-      .join('');
+      `}).join('');
 
     const htmlContent = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
-        <title>GST Reconciliation Mismatch - ${mismatchData.tradeName}</title>
+        <title>GST Reconciliation Discrepancy - ${mismatchData.tradeName}</title>
         <style>
           body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+          .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
           .header { background-color: #2c3e50; color: white; padding: 20px; text-align: center; }
           .content { padding: 30px; background-color: #f9f9f9; }
           .footer { text-align: center; padding: 20px; color: #7f8c8d; font-size: 12px; }
-          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+          table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
           th { background-color: #3498db; color: white; padding: 12px; text-align: left; }
+          .legal-note { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 20px 0; }
+          .warning { background-color: #f8d7da; border-left: 4px solid #dc3545; padding: 12px; margin: 20px 0; }
+          ul { padding-left: 20px; }
         </style>
       </head>
       <body>
         <div class="container">
           <div class="header">
             <h1>RV Solutions</h1>
-            <h2>GST Reconciliation Notice</h2>
+            <h2>GST Reconciliation Discrepancy</h2>
           </div>
           
           <div class="content">
-            <p>Dear ${mismatchData.tradeName},</p>
+            <p>Dear Sir/Madam,</p>
             
-            <p>During our monthly GST reconciliation process, we have identified discrepancies between your submitted invoices and our GSTR-2B records for GSTIN: <strong>${mismatchData.gstin}</strong>.</p>
+            <div class="legal-note">
+              <p><strong>• As per GST law, Input tax Credit (ITC) of any tax invoices can only be availed by recipient subject to reflection of the said invoices in GSTR-2B of the recipient, filing of GST returns, payment of taxes, receipt of supply etc.</strong></p>
+              <p><strong>• In respect of the above, we would like to inform you that the attached invoices are not reflecting in GSTR2B. Therefore, you are requested to file GSTR1 return as soon as possible and confirm the same to us.</strong></p>
+            </div>
             
-            <p><strong>Summary of Mismatches:</strong></p>
+            <p><strong>Discrepancy Details:</strong></p>
             <table border="1" cellpadding="0" cellspacing="0">
               <thead>
                 <tr>
+                  <th>Buyer GSTIN</th>
+                  <th>Company Name</th>
+                  <th>Supplier Name</th>
+                  <th>Supplier GSTIN</th>
                   <th>Invoice Number</th>
-                  <th>Book Value (₹)</th>
-                  <th>GSTR-2B Value (₹)</th>
-                  <th>Difference (₹)</th>
+                  <th>Invoice Date</th>
+                  <th>Invoice Amount (₹)</th>
+                  <th>GST Amount (₹)</th>
                 </tr>
               </thead>
               <tbody>
                 ${invoicesTable}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td colspan="3" style="text-align: right; font-weight: bold;">Total Difference:</td>
-                  <td style="font-weight: bold; color: ${mismatchData.totalDifference > 0 ? '#d63031' : '#00b894'}">
-                    ₹${Math.abs(mismatchData.totalDifference).toLocaleString('en-IN')} 
-                    ${mismatchData.totalDifference > 0 ? '(Excess)' : '(Short)'}
-                  </td>
-                </tr>
-              </tfoot>
             </table>
             
-            <p><strong>Required Action:</strong></p>
-            <ol>
-              <li>Please verify the invoice details mentioned above</li>
-              <li>Check your GSTR-2B for the corresponding period</li>
-              <li>Provide clarification or corrected documents if needed</li>
-              <li>Reply to this email with your confirmation or corrections</li>
-            </ol>
+            <div class="warning">
+              <p><strong>• If any non-compliance is identified in GSTR 2A/2B/Reconciliation (short filling/not filling/wrong GSTN filling) for the said period, then a Debit note of GST Value with 18% interest will be raised on you on immediate basis which will be adjusted from your payment. Request you to please do the needful as early as possible for the cases as enclosed and file / correct your GSTR 1 return.</strong></p>
+              <p><strong>• In case the GST returns are correctly filed, then would request you to please share screenshot of invoices along with Invoice number/date, Amount, Receiver + Supplier GSTN and filing status from GST portal.</strong></p>
+            </div>
             
-            <p><strong>Response Deadline:</strong> 7 days from the date of this email</p>
-            
-            <p>If you have already resolved these discrepancies or have any questions, please contact our accounts team at gst@rvsolutions.in or call +91-XXXXXXXXXX.</p>
+            <p>If you have already resolved these discrepancies or have any questions, please contact our accounts team at gsthelpdesk@rvsolutions.in</p>
             
             <p>Best regards,<br>
             <strong>Accounts Department</strong><br>
             RV Solutions Private Limited<br>
-            Email: gst@rvsolutions.in<br>
-            Phone: +91-XXXXXXXXXX</p>
+            Email: gsthelpdesk@rvsolutions.in</p>
           </div>
           
           <div class="footer">
             <p>This is an automated email from RV Solutions GST Reconciliation System.</p>
-            <p>Please do not reply to this email address. Use gst@rvsolutions.in for correspondence.</p>
+            <p>Please do not reply to this email address. Use gsthelpdesk@rvsolutions.in for correspondence.</p>
             <p>© ${new Date().getFullYear()} RV Solutions Private Limited. All rights reserved.</p>
           </div>
         </div>
@@ -130,33 +134,44 @@ export async function sendMismatchEmail(
     `;
 
     const textContent = `
-      GST Reconciliation Mismatch Notice
-      
-      Dear ${mismatchData.tradeName},
-      
-      We have identified discrepancies in GST reconciliation for your GSTIN: ${mismatchData.gstin}
-      
-      Mismatched Invoices:
-      ${mismatchData.mismatchedInvoices.map(inv => `
-        Invoice: ${inv.invoiceNumber}
-        Book Value: ₹${inv.bookValue}
-        GSTR-2B Value: ₹${inv.gstrValue}
-        Difference: ₹${inv.difference} ${inv.difference > 0 ? '(Excess)' : '(Short)'}
-      `).join('\n')}
-      
-      Total Difference: ₹${mismatchData.totalDifference}
-      
-      Please review and respond within 7 days.
-      
-      Accounts Department
-      RV Solutions Private Limited
-      gst@rvsolutions.in
+GST Reconciliation Discrepancy
+
+Dear Sir/Madam,
+
+• As per GST law, Input tax Credit (ITC) of any tax invoices can only be availed by recipient subject to reflection of the said invoices in GSTR-2B of the recipient, filing of GST returns, payment of taxes, receipt of supply etc.
+
+• In respect of the above, we would like to inform you that the attached invoices are not reflecting in GSTR2B. Therefore, you are requested to file GSTR1 return as soon as possible and confirm the same to us.
+
+Buyer GSTIN: 09AADCR9806P1ZL
+Company Name: RV Solutions Private Limited
+Supplier Name: ${mismatchData.tradeName}
+Supplier GSTIN: ${mismatchData.gstin}
+
+Discrepancy Invoices:
+${mismatchData.mismatchedInvoices.map(inv => `
+Invoice Number: ${inv.invoiceNumber}
+Invoice Date: ${new Date().toLocaleDateString('en-IN')}
+Invoice Amount: ₹${inv.bookValue.toLocaleString('en-IN')}
+GST Amount: ₹${Math.abs(inv.gstrValue - inv.bookValue).toLocaleString('en-IN')}
+----------------------------------------
+`).join('')}
+
+• If any non-compliance is identified in GSTR 2A/2B/Reconciliation (short filling/not filling/wrong GSTN filling) for the said period, then a Debit note of GST Value with 18% interest will be raised on you on immediate basis which will be adjusted from your payment. Request you to please do the needful as early as possible for the cases as enclosed and file / correct your GSTR 1 return.
+
+• In case the GST returns are correctly filed, then would request you to please share screenshot of invoices along with Invoice number/date, Amount, Receiver + Supplier GSTN and filing status from GST portal.
+
+If you have already resolved these discrepancies or have any questions, please contact our accounts team at gsthelpdesk@rvsolutions.in
+
+Best regards,
+Accounts Department
+RV Solutions Private Limited
+Email: gsthelpdesk@rvsolutions.in
     `;
 
     // Get CC emails from environment or use default
     const ccEmails = process.env.EMAIL_CC ? 
       process.env.EMAIL_CC.split(',').filter(email => email.trim()) : 
-      ['gst@rvsolutions.in'];
+      ['gsthelpdesk@rvsolutions.in'];
     
     // Get BCC emails from environment
     const bccEmails = process.env.EMAIL_BCC ? 
@@ -169,7 +184,7 @@ export async function sendMismatchEmail(
       to: mismatchData.email,
       cc: ccEmails.join(','),
       bcc: bccEmails.join(','),
-      replyTo: process.env.REPLY_TO || 'gst@rvsolutions.in',
+      replyTo: process.env.REPLY_TO || 'gsthelpdesk@rvsolutions.in',
       subject: `GST Reconciliation Discrepancy - ${mismatchData.tradeName} (${mismatchData.gstin})`,
       text: textContent,
       html: htmlContent,
@@ -185,8 +200,6 @@ export async function sendMismatchEmail(
     console.log(`✅ Email sent to ${mismatchData.email} via Gmail. ID:`, info.messageId);
     
     // Add delay to respect Gmail's rate limits (15-20 emails per minute)
-    // This delay is handled by nodemailer's pool configuration above
-    // Additional safety delay if needed
     await new Promise(resolve => setTimeout(resolve, 4000));
     
     return true;
