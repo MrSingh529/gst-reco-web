@@ -6,6 +6,7 @@ export interface MismatchData {
   email: string;
   mismatchedInvoices: Array<{
     invoiceNumber: string;
+    invoiceDate: string;
     bookValue: number;
     gstrValue: number;
     difference: number;
@@ -41,8 +42,8 @@ export async function sendMismatchEmail(
         const invoiceAmount = inv.bookValue;
         const gstAmount = inv.gstrValue - inv.bookValue;
         
-        // Format dates (you might need to get invoice date from your data)
-        const invoiceDate = new Date().toLocaleDateString('en-IN'); // Default to today, update with actual data
+        // Use actual invoice date from data, not today's date
+        const invoiceDate = inv.invoiceDate; // Use the actual date
         
         return `
         <tr>
@@ -79,16 +80,14 @@ export async function sendMismatchEmail(
       <body>
         <div class="container">
           <div class="header">
-            <h1>RV Solutions</h1>
-            <h2>GST Reconciliation Discrepancy</h2>
           </div>
           
           <div class="content">
             <p>Dear Sir/Madam,</p>
             
             <div class="legal-note">
-              <p><strong>• As per GST law, Input tax Credit (ITC) of any tax invoices can only be availed by recipient subject to reflection of the said invoices in GSTR-2B of the recipient, filing of GST returns, payment of taxes, receipt of supply etc.</strong></p>
-              <p><strong>• In respect of the above, we would like to inform you that the attached invoices are not reflecting in GSTR2B. Therefore, you are requested to file GSTR1 return as soon as possible and confirm the same to us.</strong></p>
+              <p>• As per GST law, Input tax Credit (ITC) of any tax invoices can only be availed by recipient subject to reflection of the said invoices in GSTR-2B of the recipient, filing of GST returns, payment of taxes, receipt of supply etc.</strong></p>
+              <p>• In respect of the above, we would like to inform you that the attached invoices are not reflecting in GSTR2B. Therefore, you are requested to file GSTR1 return as soon as possible and confirm the same to us.</strong></p>
             </div>
             
             <p><strong>Discrepancy Details:</strong></p>
