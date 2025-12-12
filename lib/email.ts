@@ -25,25 +25,21 @@ export async function sendMismatchEmail(
       service: 'gmail',
       auth: {
         user: process.env.GMAIL_USER || 'harpindersingh529@gmail.com',
-        pass: process.env.GMAIL_APP_PASSWORD, // Your 16-character app password
+        pass: process.env.GMAIL_APP_PASSWORD,
       },
-      // Optional: Add pool configuration for better performance
       pool: true,
-      maxConnections: 1, // Gmail limits connections
+      maxConnections: 1,
       maxMessages: 10,
-      rateDelta: 4000, // 4 seconds between emails
-      rateLimit: 15, // ~15 emails per minute (Gmail limit is 20)
+      rateDelta: 4000,
+      rateLimit: 15,
     });
 
     // Format the mismatched invoices table with the new columns
     const invoicesTable = mismatchData.mismatchedInvoices
       .map(inv => {
-        // Calculate invoice amount and GST amount
         const invoiceAmount = inv.bookValue;
         const gstAmount = inv.gstrValue - inv.bookValue;
-        
-        // Use actual invoice date from data, not today's date
-        const invoiceDate = inv.invoiceDate; // Use the actual date
+        const invoiceDate = inv.invoiceDate; // Use actual date from data
         
         return `
         <tr>
@@ -80,14 +76,15 @@ export async function sendMismatchEmail(
       <body>
         <div class="container">
           <div class="header">
+            <!-- Header intentionally left blank per accounts team request -->
           </div>
           
           <div class="content">
             <p>Dear Sir/Madam,</p>
             
             <div class="legal-note">
-              <p>• As per GST law, Input tax Credit (ITC) of any tax invoices can only be availed by recipient subject to reflection of the said invoices in GSTR-2B of the recipient, filing of GST returns, payment of taxes, receipt of supply etc.</strong></p>
-              <p>• In respect of the above, we would like to inform you that the attached invoices are not reflecting in GSTR2B. Therefore, you are requested to file GSTR1 return as soon as possible and confirm the same to us.</strong></p>
+              <p><strong>• As per GST law, Input tax Credit (ITC) of any tax invoices can only be availed by recipient subject to reflection of the said invoices in GSTR-2B of the recipient, filing of GST returns, payment of taxes, receipt of supply etc.</strong></p>
+              <p><strong>• In respect of the above, we would like to inform you that the attached invoices are not reflecting in GSTR2B. Therefore, you are requested to file GSTR1 return as soon as possible and confirm the same to us.</strong></p>
             </div>
             
             <p><strong>Discrepancy Details:</strong></p>
@@ -149,7 +146,7 @@ Supplier GSTIN: ${mismatchData.gstin}
 Discrepancy Invoices:
 ${mismatchData.mismatchedInvoices.map(inv => `
 Invoice Number: ${inv.invoiceNumber}
-Invoice Date: ${new Date().toLocaleDateString('en-IN')}
+Invoice Date: ${inv.invoiceDate} // CHANGE THIS: use inv.invoiceDate instead of new Date()
 Invoice Amount: ₹${inv.bookValue.toLocaleString('en-IN')}
 GST Amount: ₹${Math.abs(inv.gstrValue - inv.bookValue).toLocaleString('en-IN')}
 ----------------------------------------
@@ -165,7 +162,7 @@ Best regards,
 Accounts Department
 RV Solutions Private Limited
 Email: gsthelpdesk@rvsolutions.in
-    `;
+`;
 
     // Get CC emails from environment or use default
     const ccEmails = process.env.EMAIL_CC ? 
@@ -227,6 +224,7 @@ export function prepareMismatchEmails(
     email: string;
     mismatchedInvoices: Array<{
       invoiceNumber: string;
+      invoiceDate: string; // ADD THIS
       bookValue: number;
       gstrValue: number;
       difference: number;
