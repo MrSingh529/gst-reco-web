@@ -84,7 +84,8 @@ function cleanInvoiceDate(v: unknown): string {
     if (!isNaN(date.getTime())) {
       return date.toLocaleDateString('en-IN');
     }
-  } catch (_) {
+  } catch (e: unknown) {
+    // Keep original string
   }
   
   return str;
