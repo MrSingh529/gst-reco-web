@@ -27,6 +27,7 @@ export interface CleanRow {
   cgst: number
   sgst: number
   taxable: number
+  invoiceDate: string;
 }
 
 function cleanEmail(s: unknown): string {
@@ -36,24 +37,58 @@ function cleanEmail(s: unknown): string {
 function asString(v: unknown): string {
   return String(v ?? '')
 }
+
 function cleanGSTIN(s: unknown): string {
   return asString(s).trim().toUpperCase()
 }
+
 function cleanInv(s: unknown): string {
   let v = asString(s).toUpperCase().trim()
   v = v.replace(/[\s\-]/g, '')
   v = v.replace(/\\/g, '/')
   v = v.replace(/^0+([1-9])/, '$1')
   return v
-} 
+}
+
 function cleanTrade(s: unknown): string {
   return asString(s).toUpperCase().trim().replace(/\s+/g, ' ')
 }
+
 function toNum(v: unknown): number {
   if (v === null || v === undefined || v === '') return 0
   if (typeof v === 'number') return isFinite(v) ? v : 0
   const n = parseFloat(asString(v).replace(/,/g, ''))
   return isNaN(n) ? 0 : n
+}
+
+function cleanInvoiceDate(v: unknown): string {
+  if (!v) return '';
+  
+  if (v instanceof Date) {
+    return v.toLocaleDateString('en-IN');
+  }
+  
+  const str = asString(v).trim();
+  
+  // Try to parse as Excel serial number
+  if (!isNaN(Number(str))) {
+    const excelDate = new Date((Number(str) - 25569) * 86400 * 1000);
+    if (!isNaN(excelDate.getTime())) {
+      return excelDate.toLocaleDateString('en-IN');
+    }
+  }
+  
+  // Try to parse as date string
+  try {
+    const date = new Date(str);
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleDateString('en-IN');
+    }
+  } catch (e) {
+    // Keep original string
+  }
+  
+  return str;
 }
 
 function clamp(diff: number, eps: number): number {
@@ -79,6 +114,10 @@ export function normalize(rows: RawRow[]): {
     const trade = cleanTrade((r as Record<string, unknown>)[COLS.trade])
     const email = cleanEmail((r as Record<string, unknown>)[COLS.email])
     
+    // Extract and clean invoice date using the new helper function
+    const rawDate = (r as Record<string, unknown>)[COLS.date];
+    const invoiceDate = cleanInvoiceDate(rawDate);
+    
     const row: CleanRow = {
       GSTIN_clean: gstin,
       INV_clean: inv,
@@ -89,6 +128,7 @@ export function normalize(rows: RawRow[]): {
       cgst: toNum((r as Record<string, unknown>)[COLS.cgst]),
       sgst: toNum((r as Record<string, unknown>)[COLS.sgst]),
       taxable: toNum((r as Record<string, unknown>)[COLS.taxable]),
+      invoiceDate,
     }
     clean.push(row)
 
@@ -116,7 +156,7 @@ export function normalize(rows: RawRow[]): {
     tradeByGSTIN.set(gstin, best)
   }
 
-  return { clean, tradeByGSTIN, emailByGSTIN } // Updated
+  return { clean, tradeByGSTIN, emailByGSTIN }
 }
 
 export interface GroupedRow {
@@ -127,18 +167,32 @@ export interface GroupedRow {
   cgst: number
   sgst: number
   taxable: number
+  invoiceDate: string;
 }
 
 export function groupByGSTINInv(rows: CleanRow[]): GroupedRow[] {
   const map = new Map<string, GroupedRow>()
   for (const r of rows) {
     const key = `${r.GSTIN_clean}|${r.INV_clean}`
-    const cur = map.get(key) || { GSTIN_clean: r.GSTIN_clean, INV_clean: r.INV_clean, inv_val: 0, igst: 0, cgst: 0, sgst: 0, taxable: 0 }
+    const cur = map.get(key) || { 
+      GSTIN_clean: r.GSTIN_clean, 
+      INV_clean: r.INV_clean, 
+      inv_val: 0, 
+      igst: 0, 
+      cgst: 0, 
+      sgst: 0, 
+      taxable: 0,
+      invoiceDate: r.invoiceDate || ''
+    }
     cur.inv_val += r.inv_val
     cur.igst += r.igst
     cur.cgst += r.cgst
     cur.sgst += r.sgst
     cur.taxable += r.taxable
+    // Keep the first non-empty date found
+    if (!cur.invoiceDate && r.invoiceDate) {
+      cur.invoiceDate = r.invoiceDate
+    }
     map.set(key, cur)
   }
   return Array.from(map.values())
@@ -352,7 +406,7 @@ export function buildMatchedTaxableByGSTIN(
     cur.bookTaxable += L.taxable;
     cur.gstrTaxable += R.taxable;
     agg.set(gstin, cur);
-}
+  }
 
   const rows: (string | number)[][] = [[
     'GSTIN of Supplier',
@@ -479,7 +533,6 @@ export function buildWorkbook(aoaByName: Record<string, (string | number)[][]>) 
   return wb
 }
 
-// Add this function to reconcile.ts
 export function identifyMismatchesForEmail(
   z: GroupedRow[],
   g: GroupedRow[],
@@ -492,6 +545,7 @@ export function identifyMismatchesForEmail(
   email: string;
   mismatchedInvoices: Array<{
     invoiceNumber: string;
+    invoiceDate: string;
     bookValue: number;
     gstrValue: number;
     difference: number;
@@ -507,6 +561,7 @@ export function identifyMismatchesForEmail(
       email: string;
       mismatchedInvoices: Array<{
         invoiceNumber: string;
+        invoiceDate: string;
         bookValue: number;
         gstrValue: number;
         difference: number;
@@ -549,8 +604,13 @@ export function identifyMismatchesForEmail(
     }
     
     const mismatch = mismatchesByGSTIN.get(gstin)!;
+    
+    // Get the invoice date - prioritize book data date, fall back to GSTR date
+    const invoiceDate = left?.invoiceDate || right?.invoiceDate || '';
+    
     mismatch.mismatchedInvoices.push({
       invoiceNumber,
+      invoiceDate,
       bookValue: left?.taxable || 0,
       gstrValue: right?.taxable || 0,
       difference: (left?.taxable || 0) - (right?.taxable || 0)
@@ -559,7 +619,7 @@ export function identifyMismatchesForEmail(
 
   // Convert to array and filter out GSTINs with no mismatches
   return Array.from(mismatchesByGSTIN.entries())
-    .filter(([, data]) => data.mismatchedInvoices.length > 0) // Fixed: removed unused parameter
+    .filter(([, data]) => data.mismatchedInvoices.length > 0)
     .map(([gstin, data]) => ({
       gstin,
       tradeName: data.tradeName,
