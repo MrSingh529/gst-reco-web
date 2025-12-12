@@ -17,25 +17,23 @@ export async function sendMismatchEmail(
   mismatchData: MismatchData
 ): Promise<boolean> {
   try {
-    console.log('Sending email via Resend SMTP to:', mismatchData.email);
+    console.log('Sending email via Gmail to:', mismatchData.email);
 
-    // Use Resend's SMTP configuration
+    // Use Gmail SMTP configuration
     const transporter = nodemailer.createTransport({
-      host: 'smtp.resend.com',
-      port: 465,
-      secure: true,
+      service: 'gmail',
       auth: {
-        user: 'resend', // Always 'resend' for SMTP
-        pass: process.env.RESEND_API_KEY, // Your Resend API key
+        user: process.env.GMAIL_USER || 'harpindersingh529@gmail.com',
+        pass: process.env.GMAIL_APP_PASSWORD, // Your 16-character app password
       },
-      tls: {
-        rejectUnauthorized: false,
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
+      // Optional: Add pool configuration for better performance
+      pool: true,
+      maxConnections: 1, // Gmail limits connections
+      maxMessages: 10,
+      rateDelta: 4000, // 4 seconds between emails
+      rateLimit: 15, // ~15 emails per minute (Gmail limit is 20)
     });
-    
+
     // Format the mismatched invoices table
     const invoicesTable = mismatchData.mismatchedInvoices
       .map(inv => `
@@ -112,18 +110,18 @@ export async function sendMismatchEmail(
             
             <p><strong>Response Deadline:</strong> 7 days from the date of this email</p>
             
-            <p>If you have already resolved these discrepancies or have any questions, please contact our accounts team at accounts@rvsolutions.in or call +91-XXXXXXXXXX.</p>
+            <p>If you have already resolved these discrepancies or have any questions, please contact our accounts team at gst@rvsolutions.in or call +91-XXXXXXXXXX.</p>
             
             <p>Best regards,<br>
             <strong>Accounts Department</strong><br>
             RV Solutions Private Limited<br>
-            Email: accounts@rvsolutions.in<br>
+            Email: gst@rvsolutions.in<br>
             Phone: +91-XXXXXXXXXX</p>
           </div>
           
           <div class="footer">
             <p>This is an automated email from RV Solutions GST Reconciliation System.</p>
-            <p>Please do not reply to this email address. Use accounts@rvsolutions.in for correspondence.</p>
+            <p>Please do not reply to this email address. Use gst@rvsolutions.in for correspondence.</p>
             <p>© ${new Date().getFullYear()} RV Solutions Private Limited. All rights reserved.</p>
           </div>
         </div>
@@ -152,39 +150,53 @@ export async function sendMismatchEmail(
       
       Accounts Department
       RV Solutions Private Limited
-      accounts@rvsolutions.in
+      gst@rvsolutions.in
     `;
 
-    // Split CC and BCC emails
-    const ccEmails = process.env.RESEND_CC?.split(',').filter(email => email.trim()) || [];
-    const bccEmails = process.env.RESEND_BCC?.split(',').filter(email => email.trim()) || [];
+    // Get CC emails from environment or use default
+    const ccEmails = process.env.EMAIL_CC ? 
+      process.env.EMAIL_CC.split(',').filter(email => email.trim()) : 
+      ['gst@rvsolutions.in'];
+    
+    // Get BCC emails from environment
+    const bccEmails = process.env.EMAIL_BCC ? 
+      process.env.EMAIL_BCC.split(',').filter(email => email.trim()) : 
+      [];
 
-    // IMPORTANT: Use a verified domain for 'from' address
-    // You can use any email that works with Resend's default verified domains
+    // Prepare email options
     const mailOptions = {
-      from: '"RV Solutions Accounts" <onboarding@resend.dev>',
+      from: '"RV Solutions Accounts" <harpindersingh529@gmail.com>',
       to: mismatchData.email,
-      cc: ccEmails,
-      bcc: bccEmails,
+      cc: ccEmails.join(','),
+      bcc: bccEmails.join(','),
+      replyTo: process.env.REPLY_TO || 'gst@rvsolutions.in',
       subject: `GST Reconciliation Discrepancy - ${mismatchData.tradeName} (${mismatchData.gstin})`,
       text: textContent,
       html: htmlContent,
-      replyTo: 'accounts@rvsolutions.in',
     };
 
-    console.log('Sending email with SMTP:', {
-      from: mailOptions.from,
+    console.log('Sending email with Gmail:', {
       to: mailOptions.to,
       cc: mailOptions.cc,
       subject: mailOptions.subject,
     });
 
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Email sent to ${mismatchData.email} via Resend SMTP. ID:`, info.messageId);
+    console.log(`✅ Email sent to ${mismatchData.email} via Gmail. ID:`, info.messageId);
+    
+    // delay for Gmail's rate limits (15-20 emails per minute)
+    await new Promise(resolve => setTimeout(resolve, 4000));
+    
     return true;
     
   } catch (error) {
     console.error(`Failed to send email to ${mismatchData.email}:`, error);
+    
+    if (error.code === 'EENVELOPE' || error.message.includes('rate limit')) {
+      console.log('Rate limit detected, waiting 60 seconds...');
+      await new Promise(resolve => setTimeout(resolve, 60000));
+    }
+    
     return false;
   }
 }

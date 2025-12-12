@@ -8,12 +8,12 @@ import { prepareMismatchEmails, sendMismatchEmail } from '@/lib/email'
 
 export async function POST(request: NextRequest) {
   try {
-    // Check if Resend API key is configured
-    if (!process.env.RESEND_API_KEY) {
+    // Check if Gmail credentials are configured
+    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
       return NextResponse.json(
         { 
-          error: 'Resend API key not configured',
-          details: 'Please add RESEND_API_KEY to environment variables'
+          error: 'Gmail credentials not configured',
+          details: 'Please add GMAIL_USER and GMAIL_APP_PASSWORD to environment variables'
         },
         { status: 500 }
       )
@@ -73,15 +73,44 @@ export async function POST(request: NextRequest) {
       })
     }
     
+    // Check Gmail daily limit (100-150 emails per day)
+    // Include CC emails in the count
+    const ccCount = process.env.EMAIL_CC ? 
+      process.env.EMAIL_CC.split(',').filter(email => email.trim()).length : 0;
+    const totalEmailCount = mismatches.length + ccCount;
+    
+    if (totalEmailCount > 100) {
+      return NextResponse.json({
+        success: false,
+        error: 'Gmail daily limit exceeded',
+        details: `You're trying to send ${totalEmailCount} emails. Gmail free tier allows only 100-150 emails per day. Please reduce the number of recipients or split into multiple batches.`,
+        summary: {
+          totalClients: mismatches.length,
+          emailsToSend: totalEmailCount,
+          gmailDailyLimit: 100
+        }
+      }, { status: 400 })
+    }
+    
     // Prepare email data
     const emailData = prepareMismatchEmails(mismatches)
     
-    // Send emails using Resend - FIXED: Sequential sending with delay
+    // Send emails using Gmail - Sequential sending with Gmail-specific delay
     const results = [];
+    let dailyEmailCount = 0;
+    const MAX_DAILY_EMAILS = 100; // Conservative Gmail daily limit
+    
     for (let i = 0; i < emailData.length; i++) {
       const data = emailData[i];
+      
+      // Check daily limit before sending
+      if (dailyEmailCount >= MAX_DAILY_EMAILS) {
+        console.warn(`Daily Gmail limit reached (${MAX_DAILY_EMAILS}). Stopping email sending.`);
+        break;
+      }
+      
       try {
-        console.log(`Sending email ${i + 1} of ${emailData.length} to ${data.email}`);
+        console.log(`Sending email ${i + 1} of ${emailData.length} to ${data.email} (Daily count: ${dailyEmailCount + 1}/${MAX_DAILY_EMAILS})`);
         
         const success = await sendMismatchEmail(data);
         results.push({
@@ -92,10 +121,14 @@ export async function POST(request: NextRequest) {
           invoicesCount: data.mismatchedInvoices.length
         });
         
-        // Add delay between emails (1 second to stay under 2 requests/second limit)
-        // Only add delay if not the last email
+        dailyEmailCount++;
+        
+        // Gmail rate limiting: 4-5 second delay between emails
+        // Gmail allows ~15-20 emails per minute, so 4-5 seconds is safe
         if (i < emailData.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+          const delayMs = 4500 + Math.random() * 1000; // 4.5-5.5 seconds with random variation
+          console.log(`Waiting ${Math.round(delayMs/1000)} seconds before next email...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
         }
         
       } catch (error) {
@@ -108,24 +141,46 @@ export async function POST(request: NextRequest) {
           invoicesCount: data.mismatchedInvoices.length,
           error: error instanceof Error ? error.message : 'Unknown error'
         });
+        
+        // If it's a rate limit error, wait longer
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        if (errorMsg.includes('rate limit') || errorMsg.includes('quota') || errorMsg.includes('550')) {
+          console.log('Gmail rate limit detected, waiting 60 seconds...');
+          await new Promise(resolve => setTimeout(resolve, 60000));
+        }
       }
     }
     
     const successful = results.filter(r => r.success)
     const failed = results.filter(r => !r.success)
     
+    // Calculate time estimate for remaining emails if limit was reached
+    let timeEstimate = '';
+    if (dailyEmailCount >= MAX_DAILY_EMAILS && emailData.length > MAX_DAILY_EMAILS) {
+      const remaining = emailData.length - MAX_DAILY_EMAILS;
+      const hoursNeeded = Math.ceil(remaining / 15); // ~15 emails per hour with 4-second delay
+      timeEstimate = ` Gmail daily limit reached. ${remaining} emails remaining (approx. ${hoursNeeded} hours to send tomorrow).`;
+    }
+    
     return NextResponse.json({
-      success: true,
+      success: successful.length > 0,
       summary: {
-        totalClients: results.length,
+        totalClients: emailData.length,
         emailsSent: successful.length,
         emailsFailed: failed.length,
+        emailsSkipped: emailData.length - results.length,
+        dailyLimitReached: dailyEmailCount >= MAX_DAILY_EMAILS,
         details: results
       },
       recommendations: failed.length > 0 ? 
-        `Some emails failed to send: ${failed.map(f => f.email).join(', ')}` :
-        'All emails sent successfully via Resend.',
-      mismatchesCount: mismatches.length
+        `Some emails failed to send: ${failed.map(f => f.email).join(', ')}.${timeEstimate}` :
+        `All ${successful.length} emails sent successfully via Gmail.${timeEstimate}`,
+      mismatchesCount: mismatches.length,
+      gmailLimits: {
+        daily: MAX_DAILY_EMAILS,
+        sentToday: dailyEmailCount,
+        remainingToday: MAX_DAILY_EMAILS - dailyEmailCount
+      }
     })
     
   } catch (error) {
