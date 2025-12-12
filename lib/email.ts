@@ -184,7 +184,9 @@ export async function sendMismatchEmail(
     const info = await transporter.sendMail(mailOptions);
     console.log(`✅ Email sent to ${mismatchData.email} via Gmail. ID:`, info.messageId);
     
-    // delay for Gmail's rate limits (15-20 emails per minute)
+    // Add delay to respect Gmail's rate limits (15-20 emails per minute)
+    // This delay is handled by nodemailer's pool configuration above
+    // Additional safety delay if needed
     await new Promise(resolve => setTimeout(resolve, 4000));
     
     return true;
@@ -192,7 +194,12 @@ export async function sendMismatchEmail(
   } catch (error) {
     console.error(`Failed to send email to ${mismatchData.email}:`, error);
     
-    if (error.code === 'EENVELOPE' || error.message.includes('rate limit')) {
+    // FIXED: Proper error type checking
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorCode = error instanceof Object && 'code' in error ? String(error.code) : '';
+    
+    // If it's a rate limit error, wait longer before retrying
+    if (errorCode === 'EENVELOPE' || errorMessage.includes('rate limit') || errorMessage.includes('quota')) {
       console.log('Rate limit detected, waiting 60 seconds...');
       await new Promise(resolve => setTimeout(resolve, 60000));
     }
