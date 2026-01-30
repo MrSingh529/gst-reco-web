@@ -557,6 +557,7 @@ export function identifyMismatchesForEmail(
     gstrCGST: number;
     gstrSGST: number;
     difference: number;
+    mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'BOTH';
   }>;
 }> {
   const leftMap = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
@@ -581,6 +582,7 @@ export function identifyMismatchesForEmail(
         gstrCGST: number;
         gstrSGST: number;
         difference: number;
+        mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'BOTH';
       }>;
     }
   >();
@@ -596,12 +598,6 @@ export function identifyMismatchesForEmail(
     const left = leftMap.get(key);
     const right = rightMap.get(key);
     
-    // Skip if both sides match within tolerance
-    if (left && right) {
-      const taxableDiff = left.taxable - right.taxable;
-      if (Math.abs(taxableDiff) <= eps) continue;
-    }
-    
     // Get email and trade name
     const email = emailByGSTIN.get(gstin) || '';
     const tradeName = tradeByGSTIN.get(gstin) || 'Unknown';
@@ -610,6 +606,29 @@ export function identifyMismatchesForEmail(
       console.warn(`No email found for GSTIN: ${gstin}`);
       continue;
     }
+    
+    // Determine mismatch type
+    let shouldInclude = false;
+    let mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'BOTH' = 'BOTH';
+    
+    if (left && !right) {
+      // Invoice in Zoho but NOT in GSTR-2B
+      shouldInclude = true;
+      mismatchType = 'MISSING_IN_GSTR';
+    } else if (!left && right) {
+      // Invoice in GSTR but NOT in Zoho - include
+      shouldInclude = true;
+      mismatchType = 'TAXABLE_MISMATCH';
+    } else if (left && right) {
+      // Both exist, check if taxable values differ beyond tolerance
+      const taxableDiff = left.taxable - right.taxable;
+      if (Math.abs(taxableDiff) > eps) {
+        shouldInclude = true;
+        mismatchType = 'TAXABLE_MISMATCH';
+      }
+    }
+    
+    if (!shouldInclude) continue;
     
     if (!mismatchesByGSTIN.has(gstin)) {
       mismatchesByGSTIN.set(gstin, {
@@ -621,9 +640,10 @@ export function identifyMismatchesForEmail(
     
     const mismatch = mismatchesByGSTIN.get(gstin)!;
     
+    // Get the invoice date
     const invoiceDate = left?.invoiceDate || right?.invoiceDate || '';
     
-    // Calculate difference based on taxable value (for mismatch detection)
+    // Calculate difference based on taxable value
     const difference = (left?.taxable || 0) - (right?.taxable || 0);
     
     mismatch.mismatchedInvoices.push({
@@ -641,10 +661,12 @@ export function identifyMismatchesForEmail(
       gstrIGST: right?.igst || 0,
       gstrCGST: right?.cgst || 0,
       gstrSGST: right?.sgst || 0,
-      difference
+      difference,
+      mismatchType
     });
   }
 
+  // Convert to array and filter out GSTINs with no mismatches
   return Array.from(mismatchesByGSTIN.entries())
     .filter(([, data]) => data.mismatchedInvoices.length > 0)
     .map(([gstin, data]) => ({
