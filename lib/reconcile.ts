@@ -557,15 +557,54 @@ export function identifyMismatchesForEmail(
     gstrCGST: number;
     gstrSGST: number;
     difference: number;
-    mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'BOTH';
+    mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'IN_GSTR_ONLY';
+    sourceTradeName: string; // ADDED: Which trade name this invoice belongs to
   }>;
 }> {
-  const leftMap = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
-  const rightMap = new Map(g.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+  // Create maps with trade names included in keys
+  const leftMap = new Map(z.map(r => [`${r.GSTIN_clean}|${tradeByGSTIN.get(r.GSTIN_clean) || 'UNKNOWN'}|${r.INV_clean}`, r]));
+  const rightMap = new Map(g.map(r => {
+    // Get trade name for GSTR data - try to find it from tradeByGSTIN or use a default
+    const gstrTradeName = tradeByGSTIN.get(r.GSTIN_clean) || 'UNKNOWN';
+    return [`${r.GSTIN_clean}|${gstrTradeName}|${r.INV_clean}`, r];
+  }));
   
-  const mismatchesByGSTIN = new Map<
-    string, 
+  // Also create a simpler map for checking by GSTIN+INV only (for cross-matching)
+  const leftSimpleMap = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+  const rightSimpleMap = new Map(g.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
+  
+  // Store trade names by GSTIN from both datasets
+  const tradeNamesByGSTIN = new Map<string, Set<string>>();
+  
+  // Collect trade names from Zoho
+  for (const row of z) {
+    const trade = tradeByGSTIN.get(row.GSTIN_clean);
+    if (trade) {
+      if (!tradeNamesByGSTIN.has(row.GSTIN_clean)) {
+        tradeNamesByGSTIN.set(row.GSTIN_clean, new Set());
+      }
+      tradeNamesByGSTIN.get(row.GSTIN_clean)!.add(trade);
+    }
+  }
+  
+  // Collect trade names from GSTR (but we need to track these separately)
+  // For GSTR, we need to get trade names from the actual GSTR data
+  const gstrTradeByGSTIN = new Map<string, string>();
+  for (const row of g) {
+    // In GSTR data, we need to extract trade name differently
+    // Since GSTR data doesn't have consistent trade names in our current structure
+    // We'll track this separately
+    if (!gstrTradeByGSTIN.has(row.GSTIN_clean)) {
+      // We'll use a placeholder since we don't have trade names in GSTR data structure
+      gstrTradeByGSTIN.set(row.GSTIN_clean, `GSTR_SUPPLIER_${row.GSTIN_clean}`);
+    }
+  }
+
+  // Group mismatches by (GSTIN + TradeName) - CRITICAL FIX!
+  const mismatchesBySupplier = new Map<
+    string, // key = GSTIN|TradeName
     {
+      gstin: string;
       tradeName: string;
       email: string;
       mismatchedInvoices: Array<{
@@ -582,97 +621,137 @@ export function identifyMismatchesForEmail(
         gstrCGST: number;
         gstrSGST: number;
         difference: number;
-        mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'BOTH';
+        mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'IN_GSTR_ONLY';
+        sourceTradeName: string;
       }>;
     }
   >();
 
-  // Collect all keys from both datasets
-  const allKeys = new Set([
-    ...Array.from(leftMap.keys()),
-    ...Array.from(rightMap.keys())
-  ]);
-
-  for (const key of Array.from(allKeys)) {
-    const [gstin, invoiceNumber] = key.split('|');
-    const left = leftMap.get(key);
-    const right = rightMap.get(key);
+  // Helper to add invoice to appropriate supplier
+  const addInvoiceToSupplier = (
+    gstin: string,
+    tradeName: string,
+    email: string,
+    invoiceData: any
+  ) => {
+    const key = `${gstin}|${tradeName}`;
     
-    // Get email and trade name
-    const email = emailByGSTIN.get(gstin) || '';
-    const tradeName = tradeByGSTIN.get(gstin) || 'Unknown';
-    
-    if (!email) {
-      console.warn(`No email found for GSTIN: ${gstin}`);
-      continue;
-    }
-    
-    // Determine mismatch type
-    let shouldInclude = false;
-    let mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'BOTH' = 'BOTH';
-    
-    if (left && !right) {
-      // Invoice in Zoho but NOT in GSTR-2B
-      shouldInclude = true;
-      mismatchType = 'MISSING_IN_GSTR';
-    } else if (!left && right) {
-      // Invoice in GSTR but NOT in Zoho - include
-      shouldInclude = true;
-      mismatchType = 'TAXABLE_MISMATCH';
-    } else if (left && right) {
-      // Both exist, check if taxable values differ beyond tolerance
-      const taxableDiff = left.taxable - right.taxable;
-      if (Math.abs(taxableDiff) > eps) {
-        shouldInclude = true;
-        mismatchType = 'TAXABLE_MISMATCH';
-      }
-    }
-    
-    if (!shouldInclude) continue;
-    
-    if (!mismatchesByGSTIN.has(gstin)) {
-      mismatchesByGSTIN.set(gstin, {
+    if (!mismatchesBySupplier.has(key)) {
+      mismatchesBySupplier.set(key, {
+        gstin,
         tradeName,
         email,
         mismatchedInvoices: []
       });
     }
     
-    const mismatch = mismatchesByGSTIN.get(gstin)!;
+    const supplier = mismatchesBySupplier.get(key)!;
+    supplier.mismatchedInvoices.push(invoiceData);
+  };
+
+  // 1. Check invoices in Zoho (our books)
+  for (const [key, left] of Array.from(leftMap.entries())) {
+    const [gstin, tradeName, invoiceNumber] = key.split('|');
+    const email = emailByGSTIN.get(gstin) || '';
     
-    // Get the invoice date
-    const invoiceDate = left?.invoiceDate || right?.invoiceDate || '';
+    if (!email) {
+      console.warn(`No email found for GSTIN: ${gstin} (Trade: ${tradeName})`);
+      continue;
+    }
     
-    // Calculate difference based on taxable value
-    const difference = (left?.taxable || 0) - (right?.taxable || 0);
+    // Check if this invoice exists in GSTR (by GSTIN+INV only)
+    const right = rightSimpleMap.get(`${gstin}|${invoiceNumber}`);
     
-    mismatch.mismatchedInvoices.push({
-      invoiceNumber,
-      invoiceDate,
-      // Book data (from Zoho)
-      bookInvoiceValue: left?.inv_val || 0,
-      bookTaxableValue: left?.taxable || 0,
-      bookIGST: left?.igst || 0,
-      bookCGST: left?.cgst || 0,
-      bookSGST: left?.sgst || 0,
-      // GSTR data
-      gstrInvoiceValue: right?.inv_val || 0,
-      gstrTaxableValue: right?.taxable || 0,
-      gstrIGST: right?.igst || 0,
-      gstrCGST: right?.cgst || 0,
-      gstrSGST: right?.sgst || 0,
-      difference,
-      mismatchType
-    });
+    if (!right) {
+      // Invoice in Zoho but NOT in GSTR
+      addInvoiceToSupplier(gstin, tradeName, email, {
+        invoiceNumber,
+        invoiceDate: left.invoiceDate || '',
+        bookInvoiceValue: left.inv_val || 0,
+        bookTaxableValue: left.taxable || 0,
+        bookIGST: left.igst || 0,
+        bookCGST: left.cgst || 0,
+        bookSGST: left.sgst || 0,
+        gstrInvoiceValue: 0,
+        gstrTaxableValue: 0,
+        gstrIGST: 0,
+        gstrCGST: 0,
+        gstrSGST: 0,
+        difference: left.taxable || 0,
+        mismatchType: 'MISSING_IN_GSTR' as const,
+        sourceTradeName: tradeName
+      });
+    } else if (left && right) {
+      // Both exist, check if amounts differ
+      const taxableDiff = (left.taxable || 0) - (right.taxable || 0);
+      if (Math.abs(taxableDiff) > eps) {
+        addInvoiceToSupplier(gstin, tradeName, email, {
+          invoiceNumber,
+          invoiceDate: left.invoiceDate || right.invoiceDate || '',
+          bookInvoiceValue: left.inv_val || 0,
+          bookTaxableValue: left.taxable || 0,
+          bookIGST: left.igst || 0,
+          bookCGST: left.cgst || 0,
+          bookSGST: left.sgst || 0,
+          gstrInvoiceValue: right.inv_val || 0,
+          gstrTaxableValue: right.taxable || 0,
+          gstrIGST: right.igst || 0,
+          gstrCGST: right.cgst || 0,
+          gstrSGST: right.sgst || 0,
+          difference: taxableDiff,
+          mismatchType: 'TAXABLE_MISMATCH' as const,
+          sourceTradeName: tradeName
+        });
+      }
+    }
   }
 
-  // Convert to array and filter out GSTINs with no mismatches
-  return Array.from(mismatchesByGSTIN.entries())
-    .filter(([, data]) => data.mismatchedInvoices.length > 0)
-    .map(([gstin, data]) => ({
-      gstin,
-      tradeName: data.tradeName,
-      email: data.email,
-      mismatchedInvoices: data.mismatchedInvoices
-    }));
+  // 2. Check invoices in GSTR that might be for DIFFERENT suppliers (same GSTIN)
+  // These should go to a separate "unknown supplier" group
+  for (const [simpleKey, right] of Array.from(rightSimpleMap.entries())) {
+    const [gstin, invoiceNumber] = simpleKey.split('|');
+    const left = leftSimpleMap.get(simpleKey);
+    
+    if (!left) {
+      // Invoice in GSTR but NOT in Zoho
+      // Try to find which supplier this might belong to
+      const possibleTrades = tradeNamesByGSTIN.get(gstin);
+      let targetTradeName = 'UNKNOWN_SUPPLIER';
+      let targetEmail = '';
+      
+      if (possibleTrades && possibleTrades.size > 0) {
+        // If we have trade names for this GSTIN, use the first one
+        targetTradeName = Array.from(possibleTrades)[0];
+        targetEmail = emailByGSTIN.get(gstin) || '';
+      }
+      
+      if (targetEmail) {
+        // This is tricky - we're sending GSTR invoices to a Zoho supplier
+        // They might not be the right recipient!
+        console.warn(`GSTR invoice ${invoiceNumber} for GSTIN ${gstin} not found in Zoho. Sending to: ${targetTradeName}`);
+        
+        addInvoiceToSupplier(gstin, targetTradeName, targetEmail, {
+          invoiceNumber,
+          invoiceDate: right.invoiceDate || '',
+          bookInvoiceValue: 0,
+          bookTaxableValue: 0,
+          bookIGST: 0,
+          bookCGST: 0,
+          bookSGST: 0,
+          gstrInvoiceValue: right.inv_val || 0,
+          gstrTaxableValue: right.taxable || 0,
+          gstrIGST: right.igst || 0,
+          gstrCGST: right.cgst || 0,
+          gstrSGST: right.sgst || 0,
+          difference: -(right.taxable || 0),
+          mismatchType: 'IN_GSTR_ONLY' as const,
+          sourceTradeName: 'GSTR_DATA'
+        });
+      }
+    }
+  }
+
+  // Convert to array and filter out suppliers with no mismatches
+  return Array.from(mismatchesBySupplier.values())
+    .filter(data => data.mismatchedInvoices.length > 0);
 }
