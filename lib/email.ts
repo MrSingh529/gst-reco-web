@@ -7,8 +7,16 @@ export interface MismatchData {
   mismatchedInvoices: Array<{
     invoiceNumber: string;
     invoiceDate: string;
-    bookValue: number;
-    gstrValue: number;
+    bookInvoiceValue: number;
+    bookTaxableValue: number;
+    bookIGST: number;
+    bookCGST: number;
+    bookSGST: number;
+    gstrInvoiceValue: number;
+    gstrTaxableValue: number;
+    gstrIGST: number;
+    gstrCGST: number;
+    gstrSGST: number;
     difference: number;
   }>;
   totalDifference: number;
@@ -37,9 +45,25 @@ export async function sendMismatchEmail(
     // Format the mismatched invoices table with the new columns
     const invoicesTable = mismatchData.mismatchedInvoices
       .map(inv => {
-        const invoiceAmount = inv.bookValue;
-        const gstAmount = inv.gstrValue - inv.bookValue;
-        const invoiceDate = inv.invoiceDate; // Use actual date from data
+        // CORRECTED LOGIC:
+        // Invoice Amount = Invoice Value from Zoho (not taxable value)
+        const invoiceAmount = inv.bookInvoiceValue;
+        
+        // GST Amount = Sum of all GST components from Zoho
+        // If GSTR data exists, use that (since invoice is in GSTR but amounts differ)
+        // If not in GSTR, use Zoho GST amounts
+        let gstAmount = 0;
+        
+        if (inv.gstrIGST !== 0 || inv.gstrCGST !== 0 || inv.gstrSGST !== 0) {
+          // Invoice exists in GSTR but with different amounts
+          gstAmount = inv.gstrIGST + inv.gstrCGST + inv.gstrSGST;
+        } else {
+          // Invoice not found in GSTR, use Zoho GST amounts
+          gstAmount = inv.bookIGST + inv.bookCGST + inv.bookSGST;
+        }
+        
+        // Use actual date from data
+        const invoiceDate = inv.invoiceDate;
         
         return `
         <tr>
@@ -49,8 +73,8 @@ export async function sendMismatchEmail(
           <td style="padding: 8px; border: 1px solid #ddd;">${mismatchData.gstin}</td>
           <td style="padding: 8px; border: 1px solid #ddd;">${inv.invoiceNumber}</td>
           <td style="padding: 8px; border: 1px solid #ddd;">${invoiceDate}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">₹${invoiceAmount.toLocaleString('en-IN')}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">₹${Math.abs(gstAmount).toLocaleString('en-IN')}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">₹${invoiceAmount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">₹${gstAmount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
         </tr>
       `}).join('');
 
@@ -144,13 +168,24 @@ Supplier Name: ${mismatchData.tradeName}
 Supplier GSTIN: ${mismatchData.gstin}
 
 Discrepancy Invoices:
-${mismatchData.mismatchedInvoices.map(inv => `
+${mismatchData.mismatchedInvoices.map(inv => {
+  const invoiceAmount = inv.bookInvoiceValue;
+  let gstAmount = 0;
+  
+  if (inv.gstrIGST !== 0 || inv.gstrCGST !== 0 || inv.gstrSGST !== 0) {
+    gstAmount = inv.gstrIGST + inv.gstrCGST + inv.gstrSGST;
+  } else {
+    gstAmount = inv.bookIGST + inv.bookCGST + inv.bookSGST;
+  }
+  
+  return `
 Invoice Number: ${inv.invoiceNumber}
-Invoice Date: ${inv.invoiceDate} // CHANGE THIS: use inv.invoiceDate instead of new Date()
-Invoice Amount: ₹${inv.bookValue.toLocaleString('en-IN')}
-GST Amount: ₹${Math.abs(inv.gstrValue - inv.bookValue).toLocaleString('en-IN')}
+Invoice Date: ${inv.invoiceDate}
+Invoice Amount: ₹${invoiceAmount.toLocaleString('en-IN')}
+GST Amount: ₹${gstAmount.toLocaleString('en-IN')}
 ----------------------------------------
-`).join('')}
+`;
+}).join('')}
 
 • If any non-compliance is identified in GSTR 2A/2B/Reconciliation (short filling/not filling/wrong GSTN filling) for the said period, then a Debit note of GST Value with 18% interest will be raised on you on immediate basis which will be adjusted from your payment. Request you to please do the needful as early as possible for the cases as enclosed and file / correct your GSTR 1 return.
 
@@ -224,9 +259,17 @@ export function prepareMismatchEmails(
     email: string;
     mismatchedInvoices: Array<{
       invoiceNumber: string;
-      invoiceDate: string; // ADD THIS
-      bookValue: number;
-      gstrValue: number;
+      invoiceDate: string;
+      bookInvoiceValue: number;
+      bookTaxableValue: number;
+      bookIGST: number;
+      bookCGST: number;
+      bookSGST: number;
+      gstrInvoiceValue: number;
+      gstrTaxableValue: number;
+      gstrIGST: number;
+      gstrCGST: number;
+      gstrSGST: number;
       difference: number;
     }>;
   }>
