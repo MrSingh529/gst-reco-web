@@ -558,16 +558,11 @@ export function identifyMismatchesForEmail(
     gstrSGST: number;
     difference: number;
     mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'IN_GSTR_ONLY';
-    sourceTradeName: string; // ADDED: Which trade name this invoice belongs to
+    sourceTradeName: string;
   }>;
 }> {
   // Create maps with trade names included in keys
   const leftMap = new Map(z.map(r => [`${r.GSTIN_clean}|${tradeByGSTIN.get(r.GSTIN_clean) || 'UNKNOWN'}|${r.INV_clean}`, r]));
-  const rightMap = new Map(g.map(r => {
-    // Get trade name for GSTR data - try to find it from tradeByGSTIN or use a default
-    const gstrTradeName = tradeByGSTIN.get(r.GSTIN_clean) || 'UNKNOWN';
-    return [`${r.GSTIN_clean}|${gstrTradeName}|${r.INV_clean}`, r];
-  }));
   
   // Also create a simpler map for checking by GSTIN+INV only (for cross-matching)
   const leftSimpleMap = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
@@ -584,19 +579,6 @@ export function identifyMismatchesForEmail(
         tradeNamesByGSTIN.set(row.GSTIN_clean, new Set());
       }
       tradeNamesByGSTIN.get(row.GSTIN_clean)!.add(trade);
-    }
-  }
-  
-  // Collect trade names from GSTR (but we need to track these separately)
-  // For GSTR, we need to get trade names from the actual GSTR data
-  const gstrTradeByGSTIN = new Map<string, string>();
-  for (const row of g) {
-    // In GSTR data, we need to extract trade name differently
-    // Since GSTR data doesn't have consistent trade names in our current structure
-    // We'll track this separately
-    if (!gstrTradeByGSTIN.has(row.GSTIN_clean)) {
-      // We'll use a placeholder since we don't have trade names in GSTR data structure
-      gstrTradeByGSTIN.set(row.GSTIN_clean, `GSTR_SUPPLIER_${row.GSTIN_clean}`);
     }
   }
 
@@ -632,7 +614,23 @@ export function identifyMismatchesForEmail(
     gstin: string,
     tradeName: string,
     email: string,
-    invoiceData: any
+    invoiceData: {
+      invoiceNumber: string;
+      invoiceDate: string;
+      bookInvoiceValue: number;
+      bookTaxableValue: number;
+      bookIGST: number;
+      bookCGST: number;
+      bookSGST: number;
+      gstrInvoiceValue: number;
+      gstrTaxableValue: number;
+      gstrIGST: number;
+      gstrCGST: number;
+      gstrSGST: number;
+      difference: number;
+      mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'IN_GSTR_ONLY';
+      sourceTradeName: string;
+    }
   ) => {
     const key = `${gstin}|${tradeName}`;
     
@@ -678,7 +676,7 @@ export function identifyMismatchesForEmail(
         gstrCGST: 0,
         gstrSGST: 0,
         difference: left.taxable || 0,
-        mismatchType: 'MISSING_IN_GSTR' as const,
+        mismatchType: 'MISSING_IN_GSTR',
         sourceTradeName: tradeName
       });
     } else if (left && right) {
@@ -699,7 +697,7 @@ export function identifyMismatchesForEmail(
           gstrCGST: right.cgst || 0,
           gstrSGST: right.sgst || 0,
           difference: taxableDiff,
-          mismatchType: 'TAXABLE_MISMATCH' as const,
+          mismatchType: 'TAXABLE_MISMATCH',
           sourceTradeName: tradeName
         });
       }
@@ -707,7 +705,6 @@ export function identifyMismatchesForEmail(
   }
 
   // 2. Check invoices in GSTR that might be for DIFFERENT suppliers (same GSTIN)
-  // These should go to a separate "unknown supplier" group
   for (const [simpleKey, right] of Array.from(rightSimpleMap.entries())) {
     const [gstin, invoiceNumber] = simpleKey.split('|');
     const left = leftSimpleMap.get(simpleKey);
@@ -726,8 +723,6 @@ export function identifyMismatchesForEmail(
       }
       
       if (targetEmail) {
-        // This is tricky - we're sending GSTR invoices to a Zoho supplier
-        // They might not be the right recipient!
         console.warn(`GSTR invoice ${invoiceNumber} for GSTIN ${gstin} not found in Zoho. Sending to: ${targetTradeName}`);
         
         addInvoiceToSupplier(gstin, targetTradeName, targetEmail, {
@@ -744,7 +739,7 @@ export function identifyMismatchesForEmail(
           gstrCGST: right.cgst || 0,
           gstrSGST: right.sgst || 0,
           difference: -(right.taxable || 0),
-          mismatchType: 'IN_GSTR_ONLY' as const,
+          mismatchType: 'IN_GSTR_ONLY',
           sourceTradeName: 'GSTR_DATA'
         });
       }
