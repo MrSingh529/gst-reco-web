@@ -546,8 +546,16 @@ export function identifyMismatchesForEmail(
   mismatchedInvoices: Array<{
     invoiceNumber: string;
     invoiceDate: string;
-    bookValue: number;
-    gstrValue: number;
+    bookInvoiceValue: number;
+    bookTaxableValue: number;
+    bookIGST: number;
+    bookCGST: number;
+    bookSGST: number;
+    gstrInvoiceValue: number;
+    gstrTaxableValue: number;
+    gstrIGST: number;
+    gstrCGST: number;
+    gstrSGST: number;
     difference: number;
   }>;
 }> {
@@ -562,8 +570,16 @@ export function identifyMismatchesForEmail(
       mismatchedInvoices: Array<{
         invoiceNumber: string;
         invoiceDate: string;
-        bookValue: number;
-        gstrValue: number;
+        bookInvoiceValue: number;
+        bookTaxableValue: number;
+        bookIGST: number;
+        bookCGST: number;
+        bookSGST: number;
+        gstrInvoiceValue: number;
+        gstrTaxableValue: number;
+        gstrIGST: number;
+        gstrCGST: number;
+        gstrSGST: number;
         difference: number;
       }>;
     }
@@ -605,19 +621,30 @@ export function identifyMismatchesForEmail(
     
     const mismatch = mismatchesByGSTIN.get(gstin)!;
     
-    // Get the invoice date - prioritize book data date, fall back to GSTR date
     const invoiceDate = left?.invoiceDate || right?.invoiceDate || '';
+    
+    // Calculate difference based on taxable value (for mismatch detection)
+    const difference = (left?.taxable || 0) - (right?.taxable || 0);
     
     mismatch.mismatchedInvoices.push({
       invoiceNumber,
       invoiceDate,
-      bookValue: left?.taxable || 0,
-      gstrValue: right?.taxable || 0,
-      difference: (left?.taxable || 0) - (right?.taxable || 0)
+      // Book data (from Zoho)
+      bookInvoiceValue: left?.inv_val || 0,
+      bookTaxableValue: left?.taxable || 0,
+      bookIGST: left?.igst || 0,
+      bookCGST: left?.cgst || 0,
+      bookSGST: left?.sgst || 0,
+      // GSTR data
+      gstrInvoiceValue: right?.inv_val || 0,
+      gstrTaxableValue: right?.taxable || 0,
+      gstrIGST: right?.igst || 0,
+      gstrCGST: right?.cgst || 0,
+      gstrSGST: right?.sgst || 0,
+      difference
     });
   }
 
-  // Convert to array and filter out GSTINs with no mismatches
   return Array.from(mismatchesByGSTIN.entries())
     .filter(([, data]) => data.mismatchedInvoices.length > 0)
     .map(([gstin, data]) => ({
