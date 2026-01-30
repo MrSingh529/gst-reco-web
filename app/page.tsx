@@ -104,11 +104,11 @@ export default function Page() {
         gstrFile: file
       })
       
-      setLog('✅ Reconciliation complete. File downloaded: reconciliation_output.xlsx')
+      setLog('Reconciliation complete. File downloaded: reconciliation_output.xlsx')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error(err)
-      setLog('❌ Error: ' + msg)
+      setLog('Error: ' + msg)
     } finally {
       setBusy(false)
     }
@@ -116,7 +116,7 @@ export default function Page() {
 
   async function handleSendEmails() {
     if (!reconciliationData) {
-      setLog('❌ Please run reconciliation first')
+      setLog('Please run reconciliation first')
       return
     }
 
@@ -159,7 +159,7 @@ export default function Page() {
         const successfulCount = result.summary.emailsSent
         const totalCount = result.summary.totalClients
         
-        setLog(`✅ Emails sent successfully! ${successfulCount} out of ${totalCount} vendors notified.`)
+        setLog(`Emails sent successfully! ${successfulCount} out of ${totalCount} vendors notified.`)
         
         // Show detailed results
         const failed = result.summary.details.filter((d: EmailResult) => !d.success)
@@ -168,12 +168,12 @@ export default function Page() {
           setLog(prev => prev + ` Failed: ${failedNames}`)
         }
       } else {
-        setLog(`❌ Email sending failed: ${result.error || 'Unknown error'}`)
+        setLog(`Email sending failed: ${result.error || 'Unknown error'}`)
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error(err)
-      setLog('❌ Error sending emails: ' + msg)
+      setLog('Error sending emails: ' + msg)
     } finally {
       setEmailBusy(false)
     }
@@ -289,7 +289,7 @@ export default function Page() {
         <section className="card md:col-span-2">
           <div className="card-pad">
             <h2 className="text-lg font-semibold">Run Log</h2>
-            <div className={`mt-3 min-h-[84px] rounded-xl border bg-slate-50 px-4 py-3 text-sm ${log.startsWith('✅') ? 'border-emerald-300 text-emerald-800' : log.startsWith('❌') ? 'border-rose-300 text-rose-800' : log.includes('Sending') ? 'border-blue-300 text-blue-800' : 'border-slate-200 text-slate-700'}`}>
+            <div className={`mt-3 min-h-[84px] rounded-xl border bg-slate-50 px-4 py-3 text-sm ${log.startsWith('') ? 'border-emerald-300 text-emerald-800' : log.startsWith('❌') ? 'border-rose-300 text-rose-800' : log.includes('Sending') ? 'border-blue-300 text-blue-800' : 'border-slate-200 text-slate-700'}`}>
               {busy ? 'Processing reconciliation...' : 
                emailBusy ? 'Sending emails to vendors...' : 
                (log || 'No run yet. Upload an Excel file to begin.')}
