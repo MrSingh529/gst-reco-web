@@ -28,11 +28,10 @@ export async function sendMismatchEmail(
   try {
     console.log('Sending email via Gmail to:', mismatchData.email);
 
-    // Use Gmail SMTP configuration
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: process.env.GMAIL_USER || 'harpindersingh529@gmail.com',
+        user: process.env.GMAIL_USER,
         pass: process.env.GMAIL_APP_PASSWORD,
       },
       pool: true,
@@ -42,27 +41,26 @@ export async function sendMismatchEmail(
       rateLimit: 15,
     });
 
-    // Format the mismatched invoices table with the new columns
     const invoicesTable = mismatchData.mismatchedInvoices
       .map(inv => {
-        // CORRECTED LOGIC:
-        // Invoice Amount = Invoice Value from Zoho (not taxable value)
-        const invoiceAmount = inv.bookInvoiceValue;
-        
-        // GST Amount = Sum of all GST components from Zoho
-        // If GSTR data exists, use that (since invoice is in GSTR but amounts differ)
-        // If not in GSTR, use Zoho GST amounts
-        let gstAmount = 0;
-        
-        if (inv.gstrIGST !== 0 || inv.gstrCGST !== 0 || inv.gstrSGST !== 0) {
-          // Invoice exists in GSTR but with different amounts
-          gstAmount = inv.gstrIGST + inv.gstrCGST + inv.gstrSGST;
-        } else {
-          // Invoice not found in GSTR, use Zoho GST amounts
-          gstAmount = inv.bookIGST + inv.bookCGST + inv.bookSGST;
+        // 1. Invoice Amount: Use whichever exists (Zoho or GSTR)
+        //    Priority: Zoho Invoice Value > GSTR Invoice Value
+        let invoiceAmount = 0;
+        if (inv.bookInvoiceValue > 0) {
+          invoiceAmount = inv.bookInvoiceValue; // From Zoho
+        } else if (inv.gstrInvoiceValue > 0) {
+          invoiceAmount = inv.gstrInvoiceValue; // From GSTR (if Zoho is 0)
         }
         
-        // Use actual date from data
+        // 2. GST Amount: Sum of GST components
+        //    Priority: Use Zoho GST if exists, otherwise GSTR GST
+        let gstAmount = 0;
+        if (inv.bookIGST !== 0 || inv.bookCGST !== 0 || inv.bookSGST !== 0) {
+          gstAmount = inv.bookIGST + inv.bookCGST + inv.bookSGST;
+        } else if (inv.gstrIGST !== 0 || inv.gstrCGST !== 0 || inv.gstrSGST !== 0) {
+          gstAmount = inv.gstrIGST + inv.gstrCGST + inv.gstrSGST;
+        }
+        
         const invoiceDate = inv.invoiceDate;
         
         return `
