@@ -54,14 +54,14 @@ export async function sendMismatchEmail(
       inv => inv.bookInvoiceValue > 0 && inv.gstrInvoiceValue > 0
     );
 
-    // Build different tables for different mismatch types
+    // Build different tables for different mismatch types - NO COLORED BOXES
     let invoicesTable = '';
     
-    // Table 1: Invoices ONLY in our books (missing in GSTR)
+    // Table 1: Invoices ONLY in our books (missing in GSTR) - SIMPLE HEADER
     if (missingInGSTR.length > 0) {
       invoicesTable += `
-        <tr><td colspan="8" style="padding: 12px; background-color: #f8f9fa; font-weight: bold; border: 1px solid #ddd;">
-          Invoices in our records but NOT found in GSTR-2B:
+        <tr><td colspan="8" style="padding: 12px; font-weight: bold; border: 1px solid #ddd; background-color: #f9f9f9;">
+          <strong>Invoices in our records but NOT found in GSTR-2B:</strong>
         </td></tr>
       `;
       
@@ -84,11 +84,11 @@ export async function sendMismatchEmail(
       `}).join('');
     }
     
-    // Table 2: Invoices ONLY in GSTR (not in our books) - WARNING
+    // Table 2: Invoices ONLY in GSTR (not in our books) - SIMPLE HEADER
     if (inGSTROnly.length > 0) {
       invoicesTable += `
-        <tr><td colspan="8" style="padding: 12px; background-color: #fff3cd; font-weight: bold; border: 1px solid #ffc107; color: #856404;">
-          ⚠️ Invoices found in GSTR-2B but NOT in our records (Please verify if these are your invoices):
+        <tr><td colspan="8" style="padding: 12px; font-weight: bold; border: 1px solid #ddd; background-color: #f9f9f9;">
+          <strong>Invoices found in GSTR-2B but NOT in our records (Please verify if these are your invoices):</strong>
         </td></tr>
       `;
       
@@ -111,11 +111,11 @@ export async function sendMismatchEmail(
       `}).join('');
     }
     
-    // Table 3: Invoices in both but amounts differ
+    // Table 3: Invoices in both but amounts differ - SIMPLE HEADER
     if (amountMismatches.length > 0) {
       invoicesTable += `
-        <tr><td colspan="8" style="padding: 12px; background-color: #f8d7da; font-weight: bold; border: 1px solid #dc3545; color: #721c24;">
-          ⚠️ Invoices with amount discrepancies between our records and GSTR-2B:
+        <tr><td colspan="8" style="padding: 12px; font-weight: bold; border: 1px solid #ddd; background-color: #f9f9f9;">
+          <strong>Invoices with amount discrepancies between our records and GSTR-2B:</strong>
         </td></tr>
       `;
       
@@ -149,25 +149,26 @@ export async function sendMismatchEmail(
       `}).join('');
     }
 
-    // Update email content with clearer message
+    // Update email content with ALL ORIGINAL CONTENT RESTORED
     const htmlContent = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
-        <title>GST Reconciliation - ${mismatchData.tradeName}</title>
+        <title>GST Reconciliation Discrepancy - ${mismatchData.tradeName}</title>
         <style>
           body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+          .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
           .header { background-color: #2c3e50; color: white; padding: 20px; text-align: center; }
           .content { padding: 30px; background-color: #f9f9f9; }
           .footer { text-align: center; padding: 20px; color: #7f8c8d; font-size: 12px; }
           table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
           th { background-color: #3498db; color: white; padding: 12px; text-align: left; }
-          .legal-note { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 20px 0; }
-          .warning { background-color: #f8d7da; border-left: 4px solid #dc3545; padding: 12px; margin: 20px 0; }
-          .info { background-color: #d1ecf1; border-left: 4px solid #17a2b8; padding: 12px; margin: 20px 0; }
+          .legal-note { padding: 12px; margin: 20px 0; }
+          .warning { padding: 12px; margin: 20px 0; }
           ul { padding-left: 20px; }
+          .summary { margin: 20px 0; padding: 15px; background-color: #f8f9fa; border: 1px solid #ddd; }
+          .summary-title { font-weight: bold; margin-bottom: 10px; }
         </style>
       </head>
       <body>
@@ -181,10 +182,11 @@ export async function sendMismatchEmail(
             
             <div class="legal-note">
               <p><strong>• As per GST law, Input tax Credit (ITC) of any tax invoices can only be availed by recipient subject to reflection of the said invoices in GSTR-2B of the recipient, filing of GST returns, payment of taxes, receipt of supply etc.</strong></p>
+              <p><strong>• In respect of the above, we would like to inform you that the attached invoices are not reflecting in GSTR2B. Therefore, you are requested to file GSTR1 return as soon as possible and confirm the same to us.</strong></p>
             </div>
             
-            <div class="info">
-              <p><strong>GST Reconciliation Findings for ${mismatchData.tradeName} (GSTIN: ${mismatchData.gstin}):</strong></p>
+            <div class="summary">
+              <div class="summary-title">GST Reconciliation Findings for ${mismatchData.tradeName} (GSTIN: ${mismatchData.gstin}):</div>
               <ul>
                 ${missingInGSTR.length > 0 ? `<li><strong>${missingInGSTR.length} invoices</strong> in our purchase records but NOT found in GSTR-2B</li>` : ''}
                 ${inGSTROnly.length > 0 ? `<li><strong>${inGSTROnly.length} invoices</strong> found in GSTR-2B but NOT in our purchase records</li>` : ''}
@@ -212,11 +214,15 @@ export async function sendMismatchEmail(
             </table>
             
             <div class="warning">
+              <p><strong>• If any non-compliance is identified in GSTR 2A/2B/Reconciliation (short filling/not filling/wrong GSTN filling) for the said period, then a Debit note of GST Value with 18% interest will be raised on you on immediate basis which will be adjusted from your payment. Request you to please do the needful as early as possible for the cases as enclosed and file / correct your GSTR 1 return.</strong></p>
+              <p><strong>• In case the GST returns are correctly filed, then would request you to please share screenshot of invoices along with Invoice number/date, Amount, Receiver + Supplier GSTN and filing status from GST portal.</strong></p>
+            </div>
+            
+            <div class="warning">
               <p><strong>Action Required:</strong></p>
               <p>1. For invoices <strong>missing in GSTR-2B</strong>: Please file GSTR-1 return to reflect these invoices</p>
               ${inGSTROnly.length > 0 ? `<p>2. For invoices <strong>found only in GSTR-2B</strong>: Please verify if these are your invoices and share supporting documents</p>` : ''}
               ${amountMismatches.length > 0 ? `<p>3. For invoices <strong>with amount discrepancies</strong>: Please reconcile the amounts and provide correct invoices</p>` : ''}
-              <p><strong>• If any non-compliance is identified, a Debit note of GST Value with 18% interest will be raised.</strong></p>
             </div>
             
             <p>If you have already resolved these discrepancies or have any questions, please contact our accounts team at gsthelpdesk@rvsolutions.in</p>
@@ -251,15 +257,22 @@ Company Name: RV Solutions Private Limited
 Supplier Name: ${mismatchData.tradeName}
 Supplier GSTIN: ${mismatchData.gstin}
 
+GST Reconciliation Findings for ${mismatchData.tradeName} (GSTIN: ${mismatchData.gstin}):
+${missingInGSTR.length > 0 ? `- ${missingInGSTR.length} invoices in our purchase records but NOT found in GSTR-2B` : ''}
+${inGSTROnly.length > 0 ? `- ${inGSTROnly.length} invoices found in GSTR-2B but NOT in our purchase records` : ''}
+${amountMismatches.length > 0 ? `- ${amountMismatches.length} invoices with amount discrepancies between our records and GSTR-2B` : ''}
+
 Discrepancy Invoices:
 ${mismatchData.mismatchedInvoices.map(inv => {
-  const invoiceAmount = inv.bookInvoiceValue;
+  let invoiceAmount = 0;
   let gstAmount = 0;
   
-  if (inv.gstrIGST !== 0 || inv.gstrCGST !== 0 || inv.gstrSGST !== 0) {
-    gstAmount = inv.gstrIGST + inv.gstrCGST + inv.gstrSGST;
-  } else {
+  if (inv.bookInvoiceValue > 0) {
+    invoiceAmount = inv.bookInvoiceValue;
     gstAmount = inv.bookIGST + inv.bookCGST + inv.bookSGST;
+  } else if (inv.gstrInvoiceValue > 0) {
+    invoiceAmount = inv.gstrInvoiceValue;
+    gstAmount = inv.gstrIGST + inv.gstrCGST + inv.gstrSGST;
   }
   
   return `
@@ -274,6 +287,11 @@ GST Amount: ₹${gstAmount.toLocaleString('en-IN')}
 • If any non-compliance is identified in GSTR 2A/2B/Reconciliation (short filling/not filling/wrong GSTN filling) for the said period, then a Debit note of GST Value with 18% interest will be raised on you on immediate basis which will be adjusted from your payment. Request you to please do the needful as early as possible for the cases as enclosed and file / correct your GSTR 1 return.
 
 • In case the GST returns are correctly filed, then would request you to please share screenshot of invoices along with Invoice number/date, Amount, Receiver + Supplier GSTN and filing status from GST portal.
+
+Action Required:
+1. For invoices missing in GSTR-2B: Please file GSTR-1 return to reflect these invoices
+${inGSTROnly.length > 0 ? `2. For invoices found only in GSTR-2B: Please verify if these are your invoices and share supporting documents` : ''}
+${amountMismatches.length > 0 ? `3. For invoices with amount discrepancies: Please reconcile the amounts and provide correct invoices` : ''}
 
 If you have already resolved these discrepancies or have any questions, please contact our accounts team at gsthelpdesk@rvsolutions.in
 
