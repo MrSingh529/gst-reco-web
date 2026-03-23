@@ -271,31 +271,84 @@ export function buildBillsWise(z: GroupedRow[], g: GroupedRow[], eps: number): (
   const leftMap = new Map(z.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
   const rightMap = new Map(g.map(r => [`${r.GSTIN_clean}|${r.INV_clean}`, r]));
   const keys = new Set<string>(Array.from(leftMap.keys()).concat(Array.from(rightMap.keys())));
+  
   const rows: (string | number)[][] = [[
     'GSTIN of Supplier', 'Invoice Number',
     'Book: Invoice Value', '2B: Invoice Value', 'Diff: Invoice Value',
+    'Book: IGST', '2B: IGST', 'Diff: IGST',
+    'Book: CGST', '2B: CGST', 'Diff: CGST',
+    'Book: SGST', '2B: SGST', 'Diff: SGST',
     'Book: Total Tax', '2B: Total Tax', 'Diff: Total Tax',
-    'Book: Taxable', '2B: Taxable', 'Diff: Taxable', 'Status'
+    'Book: Taxable', '2B: Taxable', 'Diff: Taxable', 
+    'Status', 'Remarks'
   ]];
+  
   for (const k of Array.from(keys).sort()) {
     const L = leftMap.get(k), R = rightMap.get(k);
     const Ltot = (L?.igst || 0) + (L?.cgst || 0) + (L?.sgst || 0);
     const Rtot = (R?.igst || 0) + (R?.cgst || 0) + (R?.sgst || 0);
+    
     const dInv = clamp((L?.inv_val || 0) - (R?.inv_val || 0), eps);
+    const dIgst = clamp((L?.igst || 0) - (R?.igst || 0), eps);
+    const dCgst = clamp((L?.cgst || 0) - (R?.cgst || 0), eps);
+    const dSgst = clamp((L?.sgst || 0) - (R?.sgst || 0), eps);
     const dTax = clamp(Ltot - Rtot, eps);
     const dTaxable = clamp((L?.taxable || 0) - (R?.taxable || 0), eps);
+    
     let status = 'Match';
+    let remarks = '';
     const [gstin, inv] = k.split('|');
-    if (L && !R) status = 'Missing in 2B';
-    else if (!L && R) status = 'Missing in Book';
-    else {
+    
+    if (L && !R) {
+      status = 'Missing in 2B';
+      remarks = 'Invoice present in Books but not in GSTR-2B';
+    } else if (!L && R) {
+      status = 'Missing in Book';
+      remarks = 'Invoice present in GSTR-2B but not in Books';
+    } else if (L && R) {
       const probs = [] as string[];
-      if (dInv !== 0) probs.push('Invoice');
-      if (dTax !== 0) probs.push('Tax');
-      if (dTaxable !== 0) probs.push('Taxable');
-      if (probs.length) status = 'Mismatch: ' + probs.join(', ');
+      if (dInv !== 0) probs.push('Invoice Value');
+      
+      const igstMatch = Math.abs((L?.igst || 0) - (R?.igst || 0)) <= eps;
+      const cgstMatch = Math.abs((L?.cgst || 0) - (R?.cgst || 0)) <= eps;
+      const sgstMatch = Math.abs((L?.sgst || 0) - (R?.sgst || 0)) <= eps;
+      
+      if (!igstMatch || !cgstMatch || !sgstMatch) {
+        const taxSwap = detectTaxSwapping(
+          L?.igst || 0, L?.cgst || 0, L?.sgst || 0,
+          R?.igst || 0, R?.cgst || 0, R?.sgst || 0,
+          eps
+        );
+        
+        if (taxSwap.swapped) {
+          remarks = taxSwap.details;
+          status = 'Tax Component Swapped';
+        } else {
+          if (dIgst !== 0) probs.push('IGST');
+          if (dCgst !== 0) probs.push('CGST');
+          if (dSgst !== 0) probs.push('SGST');
+          remarks = taxSwap.details;
+        }
+      }
+      
+      if (dTax !== 0 && !remarks) probs.push('Total Tax');
+      if (dTaxable !== 0) probs.push('Taxable Value');
+      
+      if (probs.length > 0 && status !== 'Tax Component Swapped') {
+        status = 'Mismatch: ' + probs.join(', ');
+      }
     }
-    rows.push([gstin, inv, L?.inv_val || 0, R?.inv_val || 0, dInv, Ltot, Rtot, dTax, L?.taxable || 0, R?.taxable || 0, dTaxable, status]);
+    
+    rows.push([
+      gstin, inv,
+      L?.inv_val || 0, R?.inv_val || 0, dInv,
+      L?.igst || 0, R?.igst || 0, dIgst,
+      L?.cgst || 0, R?.cgst || 0, dCgst,
+      L?.sgst || 0, R?.sgst || 0, dSgst,
+      Ltot, Rtot, dTax,
+      L?.taxable || 0, R?.taxable || 0, dTaxable,
+      status, remarks
+    ]);
   }
   return rows;
 }
@@ -449,54 +502,90 @@ export function buildInvoiceWise(
     'Invoice Number',
     'Book: Invoice Value',
     '2B: Invoice Value',
+    'Book: IGST',
+    '2B: IGST',
+    'Book: CGST',
+    '2B: CGST',
+    'Book: SGST',
+    '2B: SGST',
     'Book: Total Tax',
     '2B: Total Tax',
     'Book: Taxable Value',
     '2B: Taxable Value',
-    'Match Status'
+    'Match Status',
+    'Remarks'
   ]];
 
-  // Track totals for summary
   let totalMatched = 0;
+  let totalSwapped = 0;
   let bookInvTotal = 0, gstrInvTotal = 0;
   let bookTaxTotal = 0, gstrTaxTotal = 0;
   let bookTaxableTotal = 0, gstrTaxableTotal = 0;
 
-  // Iterate through all invoices present in both datasets
   for (const [key, L] of Array.from(leftMap.entries())) {
     const R = rightMap.get(key);
     
-    // Skip if not present in both sides
     if (!R) continue;
 
     const [gstin, inv] = key.split('|');
     const trade = tradeByGSTIN.get(gstin) || '';
 
-    // Calculate total tax
     const LTax = L.igst + L.cgst + L.sgst;
     const RTax = R.igst + R.cgst + R.sgst;
 
-    // Check if all three match: Invoice Value, Total Tax, Taxable Value
     const invMatch = Math.abs(L.inv_val - R.inv_val) <= eps;
     const taxMatch = Math.abs(LTax - RTax) <= eps;
     const taxableMatch = Math.abs(L.taxable - R.taxable) <= eps;
-
-    // Only include if GSTIN, Invoice Number, and all amounts match
-    if (invMatch && taxMatch && taxableMatch) {
-      rows.push([
-        gstin,
-        trade,
-        inv,
-        L.inv_val,
-        R.inv_val,
-        LTax,
-        RTax,
-        L.taxable,
-        R.taxable,
-        'Perfect Match'
-      ]);
-
+    
+    let status = '';
+    let remarks = '';
+    
+    // Check for tax swapping
+    const taxSwap = detectTaxSwapping(
+      L.igst, L.cgst, L.sgst,
+      R.igst, R.cgst, R.sgst,
+      eps
+    );
+    
+    if (invMatch && taxableMatch && taxSwap.swapped) {
+      status = 'Tax Component Swapped';
+      remarks = taxSwap.details;
+      totalSwapped++;
       totalMatched++;
+      
+      rows.push([
+        gstin, trade, inv,
+        L.inv_val, R.inv_val,
+        L.igst, R.igst,
+        L.cgst, R.cgst,
+        L.sgst, R.sgst,
+        LTax, RTax,
+        L.taxable, R.taxable,
+        status, remarks
+      ]);
+      
+      bookInvTotal += L.inv_val;
+      gstrInvTotal += R.inv_val;
+      bookTaxTotal += LTax;
+      gstrTaxTotal += RTax;
+      bookTaxableTotal += L.taxable;
+      gstrTaxableTotal += R.taxable;
+      
+    } else if (invMatch && taxMatch && taxableMatch) {
+      status = 'Perfect Match';
+      totalMatched++;
+      
+      rows.push([
+        gstin, trade, inv,
+        L.inv_val, R.inv_val,
+        L.igst, R.igst,
+        L.cgst, R.cgst,
+        L.sgst, R.sgst,
+        LTax, RTax,
+        L.taxable, R.taxable,
+        status, remarks
+      ]);
+      
       bookInvTotal += L.inv_val;
       gstrInvTotal += R.inv_val;
       bookTaxTotal += LTax;
@@ -506,18 +595,24 @@ export function buildInvoiceWise(
     }
   }
 
-  // Add summary rows
   rows.push([]);
   rows.push([
-    'Total Matched Invoices',
+    'Summary:',
     '',
-    totalMatched,
+    `Matched: ${totalMatched} (${totalSwapped} with tax component swaps)`,
     bookInvTotal,
     gstrInvTotal,
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
     bookTaxTotal,
     gstrTaxTotal,
     bookTaxableTotal,
     gstrTaxableTotal,
+    '',
     ''
   ]);
 
@@ -557,8 +652,9 @@ export function identifyMismatchesForEmail(
     gstrCGST: number;
     gstrSGST: number;
     difference: number;
-    mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'IN_GSTR_ONLY';
+    mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'IN_GSTR_ONLY' | 'TAX_COMPONENT_SWAPPED';
     sourceTradeName: string;
+    taxSwapDetails?: string;
   }>;
 }> {
   // Create maps with trade names included in keys
@@ -603,8 +699,9 @@ export function identifyMismatchesForEmail(
         gstrCGST: number;
         gstrSGST: number;
         difference: number;
-        mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'IN_GSTR_ONLY';
+        mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'IN_GSTR_ONLY' | 'TAX_COMPONENT_SWAPPED';
         sourceTradeName: string;
+        taxSwapDetails?: string;
       }>;
     }
   >();
@@ -628,8 +725,9 @@ export function identifyMismatchesForEmail(
       gstrCGST: number;
       gstrSGST: number;
       difference: number;
-      mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'IN_GSTR_ONLY';
+      mismatchType: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'IN_GSTR_ONLY' | 'TAX_COMPONENT_SWAPPED';
       sourceTradeName: string;
+      taxSwapDetails?: string;
     }
   ) => {
     const key = `${gstin}|${tradeName}`;
@@ -680,9 +778,15 @@ export function identifyMismatchesForEmail(
         sourceTradeName: tradeName
       });
     } else if (left && right) {
-      // Both exist, check if amounts differ
-      const taxableDiff = (left.taxable || 0) - (right.taxable || 0);
-      if (Math.abs(taxableDiff) > eps) {
+      // Check for tax component swapping first
+      const taxSwap = detectTaxSwapping(
+        left.igst || 0, left.cgst || 0, left.sgst || 0,
+        right.igst || 0, right.cgst || 0, right.sgst || 0,
+        eps
+      );
+
+      if (taxSwap.swapped) {
+        // Mark as mismatch with swap information
         addInvoiceToSupplier(gstin, tradeName, email, {
           invoiceNumber,
           invoiceDate: left.invoiceDate || right.invoiceDate || '',
@@ -696,10 +800,33 @@ export function identifyMismatchesForEmail(
           gstrIGST: right.igst || 0,
           gstrCGST: right.cgst || 0,
           gstrSGST: right.sgst || 0,
-          difference: taxableDiff,
-          mismatchType: 'TAXABLE_MISMATCH',
-          sourceTradeName: tradeName
+          difference: (left.taxable || 0) - (right.taxable || 0),
+          mismatchType: 'TAX_COMPONENT_SWAPPED',
+          sourceTradeName: tradeName,
+          taxSwapDetails: taxSwap.details
         });
+      } else {
+        // No swap — check for plain taxable value mismatch
+        const taxableDiff = (left.taxable || 0) - (right.taxable || 0);
+        if (Math.abs(taxableDiff) > eps) {
+          addInvoiceToSupplier(gstin, tradeName, email, {
+            invoiceNumber,
+            invoiceDate: left.invoiceDate || right.invoiceDate || '',
+            bookInvoiceValue: left.inv_val || 0,
+            bookTaxableValue: left.taxable || 0,
+            bookIGST: left.igst || 0,
+            bookCGST: left.cgst || 0,
+            bookSGST: left.sgst || 0,
+            gstrInvoiceValue: right.inv_val || 0,
+            gstrTaxableValue: right.taxable || 0,
+            gstrIGST: right.igst || 0,
+            gstrCGST: right.cgst || 0,
+            gstrSGST: right.sgst || 0,
+            difference: taxableDiff,
+            mismatchType: 'TAXABLE_MISMATCH',
+            sourceTradeName: tradeName
+          });
+        }
       }
     }
   }
@@ -749,4 +876,105 @@ export function identifyMismatchesForEmail(
   // Convert to array and filter out suppliers with no mismatches
   return Array.from(mismatchesBySupplier.values())
     .filter(data => data.mismatchedInvoices.length > 0);
+}
+
+export interface TaxMismatchDetails {
+  hasMismatch: boolean;
+  swapped: boolean;
+  swapType?: 'IGST-CGST' | 'IGST-SGST' | 'CGST-SGST' | 'IGST-CGST-SGST';
+  details: string;
+}
+
+export function detectTaxSwapping(
+  bookIgst: number,
+  bookCgst: number,
+  bookSgst: number,
+  gstrIgst: number,
+  gstrCgst: number,
+  gstrSgst: number,
+  eps: number
+): TaxMismatchDetails {
+  // Check if amounts match exactly (within tolerance)
+  const igstMatch = Math.abs(bookIgst - gstrIgst) <= eps;
+  const cgstMatch = Math.abs(bookCgst - gstrCgst) <= eps;
+  const sgstMatch = Math.abs(bookSgst - gstrSgst) <= eps;
+  
+  if (igstMatch && cgstMatch && sgstMatch) {
+    return { hasMismatch: false, swapped: false, details: '' };
+  }
+  
+  // Check for swapped values between IGST, CGST, SGST
+  const igstVsCgst = Math.abs(bookIgst - gstrCgst) <= eps;
+  const igstVsSgst = Math.abs(bookIgst - gstrSgst) <= eps;
+  const cgstVsIgst = Math.abs(bookCgst - gstrIgst) <= eps;
+  const cgstVsSgst = Math.abs(bookCgst - gstrSgst) <= eps;
+  const sgstVsIgst = Math.abs(bookSgst - gstrIgst) <= eps;
+  const sgstVsCgst = Math.abs(bookSgst - gstrCgst) <= eps;
+  
+  // Detect various swap patterns
+  if (igstVsCgst && cgstVsIgst && sgstMatch) {
+    return {
+      hasMismatch: true,
+      swapped: true,
+      swapType: 'IGST-CGST',
+      details: 'IGST and CGST values are swapped. Book IGST matches GSTR CGST, and Book CGST matches GSTR IGST.'
+    };
+  }
+  
+  if (igstVsSgst && sgstVsIgst && cgstMatch) {
+    return {
+      hasMismatch: true,
+      swapped: true,
+      swapType: 'IGST-SGST',
+      details: 'IGST and SGST values are swapped. Book IGST matches GSTR SGST, and Book SGST matches GSTR IGST.'
+    };
+  }
+  
+  if (cgstVsSgst && sgstVsCgst && igstMatch) {
+    return {
+      hasMismatch: true,
+      swapped: true,
+      swapType: 'CGST-SGST',
+      details: 'CGST and SGST values are swapped. Book CGST matches GSTR SGST, and Book SGST matches GSTR CGST.'
+    };
+  }
+  
+  // Check for circular swap (all three swapped)
+  if (igstVsCgst && cgstVsSgst && sgstVsIgst) {
+    return {
+      hasMismatch: true,
+      swapped: true,
+      swapType: 'IGST-CGST-SGST',
+      details: 'Tax values are circularly swapped. Book IGST→GSTR CGST, Book CGST→GSTR SGST, Book SGST→GSTR IGST.'
+    };
+  }
+  
+  if (igstVsSgst && sgstVsCgst && cgstVsIgst) {
+    return {
+      hasMismatch: true,
+      swapped: true,
+      swapType: 'IGST-CGST-SGST',
+      details: 'Tax values are circularly swapped. Book IGST→GSTR SGST, Book SGST→GSTR CGST, Book CGST→GSTR IGST.'
+    };
+  }
+  
+  // Check if totals match but individual components differ
+  const bookTotalTax = bookIgst + bookCgst + bookSgst;
+  const gstrTotalTax = gstrIgst + gstrCgst + gstrSgst;
+  const totalMatch = Math.abs(bookTotalTax - gstrTotalTax) <= eps;
+  
+  if (totalMatch && (!igstMatch || !cgstMatch || !sgstMatch)) {
+    return {
+      hasMismatch: true,
+      swapped: true,
+      swapType: undefined,
+      details: 'Total tax matches but individual components differ. Possible misclassification between IGST, CGST, and SGST.'
+    };
+  }
+  
+  return {
+    hasMismatch: true,
+    swapped: false,
+    details: `Tax mismatch - Book: IGST=${bookIgst}, CGST=${bookCgst}, SGST=${bookSgst} | GSTR: IGST=${gstrIgst}, CGST=${gstrCgst}, SGST=${gstrSgst}`
+  };
 }
