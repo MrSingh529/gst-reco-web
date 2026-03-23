@@ -18,6 +18,8 @@ export interface MismatchData {
     gstrCGST: number;
     gstrSGST: number;
     difference: number;
+    mismatchType?: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'IN_GSTR_ONLY' | 'TAX_COMPONENT_SWAPPED';
+    taxSwapDetails?: string;
   }>;
   totalDifference: number;
 }
@@ -43,15 +45,22 @@ export async function sendMismatchEmail(
 
     // Separate invoices by type for better clarity
     const missingInGSTR = mismatchData.mismatchedInvoices.filter(
-      inv => inv.bookInvoiceValue > 0 && inv.gstrInvoiceValue === 0
+      inv => inv.mismatchType === 'MISSING_IN_GSTR' ||
+        (!inv.mismatchType && inv.bookInvoiceValue > 0 && inv.gstrInvoiceValue === 0)
     );
     
     const inGSTROnly = mismatchData.mismatchedInvoices.filter(
-      inv => inv.bookInvoiceValue === 0 && inv.gstrInvoiceValue > 0
+      inv => inv.mismatchType === 'IN_GSTR_ONLY' ||
+        (!inv.mismatchType && inv.bookInvoiceValue === 0 && inv.gstrInvoiceValue > 0)
     );
     
     const amountMismatches = mismatchData.mismatchedInvoices.filter(
-      inv => inv.bookInvoiceValue > 0 && inv.gstrInvoiceValue > 0
+      inv => inv.mismatchType === 'TAXABLE_MISMATCH' ||
+        (!inv.mismatchType && inv.bookInvoiceValue > 0 && inv.gstrInvoiceValue > 0)
+    );
+
+    const swappedInvoices = mismatchData.mismatchedInvoices.filter(
+      inv => inv.mismatchType === 'TAX_COMPONENT_SWAPPED'
     );
 
     // Build different tables for different mismatch types - NO COLORED BOXES
@@ -149,6 +158,51 @@ export async function sendMismatchEmail(
       `}).join('');
     }
 
+    // Table 4: Invoices with tax component swapping detected
+    if (swappedInvoices.length > 0) {
+      invoicesTable += `
+        <tr><td colspan="8" style="padding: 12px; font-weight: bold; border: 1px solid #ddd; background-color: #fff3cd;">
+          <strong>⚠️ Invoices with Tax Component Swapping Detected:</strong><br>
+          <small style="font-weight: normal;">IGST/CGST/SGST values are misplaced in GSTR-2B. Total tax matches but individual components are swapped.</small>
+        </td></tr>
+      `;
+
+      invoicesTable += swappedInvoices.map(inv => {
+        const bookTotalTax = inv.bookIGST + inv.bookCGST + inv.bookSGST;
+        const gstrTotalTax = inv.gstrIGST + inv.gstrCGST + inv.gstrSGST;
+
+        return `
+        <tr>
+          <td style="padding: 8px; border: 1px solid #ddd;">09AADCR9806P1ZL</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">RV Solutions Private Limited</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${mismatchData.tradeName}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${mismatchData.gstin}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${inv.invoiceNumber}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${inv.invoiceDate}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">
+            <div>Book: ₹${inv.bookInvoiceValue.toLocaleString('en-IN')}</div>
+            <div>GSTR: ₹${inv.gstrInvoiceValue.toLocaleString('en-IN')}</div>
+          </td>
+          <td style="padding: 8px; border: 1px solid #ddd;">
+            <div><strong>Book Tax:</strong></div>
+            <div>IGST: ₹${inv.bookIGST.toLocaleString('en-IN')}</div>
+            <div>CGST: ₹${inv.bookCGST.toLocaleString('en-IN')}</div>
+            <div>SGST: ₹${inv.bookSGST.toLocaleString('en-IN')}</div>
+            <div>Total: ₹${bookTotalTax.toLocaleString('en-IN')}</div>
+            <div style="margin-top: 8px;"><strong>GSTR Tax:</strong></div>
+            <div>IGST: ₹${inv.gstrIGST.toLocaleString('en-IN')}</div>
+            <div>CGST: ₹${inv.gstrCGST.toLocaleString('en-IN')}</div>
+            <div>SGST: ₹${inv.gstrSGST.toLocaleString('en-IN')}</div>
+            <div>Total: ₹${gstrTotalTax.toLocaleString('en-IN')}</div>
+            <div style="margin-top: 8px; color: #856404; background: #fff3cd; padding: 4px;">
+              ⚠️ ${inv.taxSwapDetails || 'Tax components are swapped between IGST/CGST/SGST'}
+            </div>
+          </td>
+        </tr>
+      `;
+      }).join('');
+    }
+
     // Update email content with ALL ORIGINAL CONTENT RESTORED
     const htmlContent = `
       <!DOCTYPE html>
@@ -191,6 +245,7 @@ export async function sendMismatchEmail(
                 ${missingInGSTR.length > 0 ? `<li><strong>${missingInGSTR.length} invoices</strong> in our purchase records but NOT found in GSTR-2B</li>` : ''}
                 ${inGSTROnly.length > 0 ? `<li><strong>${inGSTROnly.length} invoices</strong> found in GSTR-2B but NOT in our purchase records</li>` : ''}
                 ${amountMismatches.length > 0 ? `<li><strong>${amountMismatches.length} invoices</strong> with amount discrepancies between our records and GSTR-2B</li>` : ''}
+                ${swappedInvoices.length > 0 ? `<li><strong>${swappedInvoices.length} invoices</strong> with tax component swapping detected (IGST/CGST/SGST misplaced in GSTR-2B)</li>` : ''}
               </ul>
             </div>
             
@@ -223,6 +278,7 @@ export async function sendMismatchEmail(
               <p>1. For invoices <strong>missing in GSTR-2B</strong>: Please file GSTR-1 return to reflect these invoices</p>
               ${inGSTROnly.length > 0 ? `<p>2. For invoices <strong>found only in GSTR-2B</strong>: Please verify if these are your invoices and share supporting documents</p>` : ''}
               ${amountMismatches.length > 0 ? `<p>3. For invoices <strong>with amount discrepancies</strong>: Please reconcile the amounts and provide correct invoices</p>` : ''}
+              ${swappedInvoices.length > 0 ? `<p>4. For invoices <strong>with tax component swapping</strong>: Please amend GSTR-1 to correctly classify amounts under IGST, CGST, and SGST</p>` : ''}
             </div>
             
             <p>If you have already resolved these discrepancies or have any questions, please contact our accounts team at gsthelpdesk@rvsolutions.in</p>
@@ -261,6 +317,7 @@ GST Reconciliation Findings for ${mismatchData.tradeName} (GSTIN: ${mismatchData
 ${missingInGSTR.length > 0 ? `- ${missingInGSTR.length} invoices in our purchase records but NOT found in GSTR-2B` : ''}
 ${inGSTROnly.length > 0 ? `- ${inGSTROnly.length} invoices found in GSTR-2B but NOT in our purchase records` : ''}
 ${amountMismatches.length > 0 ? `- ${amountMismatches.length} invoices with amount discrepancies between our records and GSTR-2B` : ''}
+${swappedInvoices.length > 0 ? `- ${swappedInvoices.length} invoices with tax component swapping detected (IGST/CGST/SGST misplaced in GSTR-2B)` : ''}
 
 Discrepancy Invoices:
 ${mismatchData.mismatchedInvoices.map(inv => {
@@ -274,12 +331,16 @@ ${mismatchData.mismatchedInvoices.map(inv => {
     invoiceAmount = inv.gstrInvoiceValue;
     gstAmount = inv.gstrIGST + inv.gstrCGST + inv.gstrSGST;
   }
+
+  const swapNote = inv.mismatchType === 'TAX_COMPONENT_SWAPPED'
+    ? `\nTax Swap: ${inv.taxSwapDetails || 'Tax components are swapped between IGST/CGST/SGST'}`
+    : '';
   
   return `
 Invoice Number: ${inv.invoiceNumber}
 Invoice Date: ${inv.invoiceDate}
 Invoice Amount: ₹${invoiceAmount.toLocaleString('en-IN')}
-GST Amount: ₹${gstAmount.toLocaleString('en-IN')}
+GST Amount: ₹${gstAmount.toLocaleString('en-IN')}${swapNote}
 ----------------------------------------
 `;
 }).join('')}
@@ -292,6 +353,7 @@ Action Required:
 1. For invoices missing in GSTR-2B: Please file GSTR-1 return to reflect these invoices
 ${inGSTROnly.length > 0 ? `2. For invoices found only in GSTR-2B: Please verify if these are your invoices and share supporting documents` : ''}
 ${amountMismatches.length > 0 ? `3. For invoices with amount discrepancies: Please reconcile the amounts and provide correct invoices` : ''}
+${swappedInvoices.length > 0 ? `4. For invoices with tax component swapping: Please amend GSTR-1 to correctly classify amounts under IGST, CGST, and SGST` : ''}
 
 If you have already resolved these discrepancies or have any questions, please contact our accounts team at gsthelpdesk@rvsolutions.in
 
@@ -373,6 +435,8 @@ export function prepareMismatchEmails(
       gstrCGST: number;
       gstrSGST: number;
       difference: number;
+      mismatchType?: 'MISSING_IN_GSTR' | 'TAXABLE_MISMATCH' | 'IN_GSTR_ONLY' | 'TAX_COMPONENT_SWAPPED';
+      taxSwapDetails?: string;
     }>;
   }>
 ): MismatchData[] {
